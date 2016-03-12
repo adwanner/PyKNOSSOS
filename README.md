@@ -11,11 +11,13 @@ in 3D on a standard desktop computer together with the underlying image data. Th
 is important for efficient data browsing, tracing and error correction. For higher-level analyses,
 visualization in PyKNOSSOS can be integrated into custom workflows. Moreover, PyKNOSSOS
 can be used to generate 3D renderings and animated displays of raw data and reconstructions.
+
 2. Multi-resolution view. Like KNOSSOS, PyKNOSSOS dynamically loads cubes of data into
 RAM as users navigate through a volume. This allows users to browse through large datasets
 (>1TB) with minimal RAM requirements. Storing multiple sets of cubes at different resolutions
 allows for seamless zooming through large volumes and the extraction of virtual reslices with
 arbitrary orientation and zoom-level.
+
 3. Virtual reslicing of the raw data orthogonal to local processes. Tracing of neurites and branch
 point detection should be particularly efficient when users view a section through the EM data
 volume that is orthogonal to the process being traced. Such virtual reslices should also facilitate
@@ -24,6 +26,7 @@ postsynapse are contained in the same view. PyKNOSSOS automatically calculates a
 “locally orthogonal” section4 during tracing and presents it in a separate viewport, in
 addition to the cardinal cross-sections and the imaging plane. We found that the “locally
 orthogonal” view facilitates the detection of branch points and increases tracing speed.
+
 4. Synapse annotation tools. PyKNOSSOS includes tools to define the location and direction of a
 synapse by three successive clicks on the presynaptic process, the synaptic density, and the
 postsynaptic process. In addition, synapses can be assigned to user-defined classes by a
