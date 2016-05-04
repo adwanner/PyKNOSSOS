@@ -12,7 +12,7 @@ NCubesPerEdge=9; #on windows NCubesPerEdge=5;
 encryptionkey='EncryptPyKnossos';
 #AES key must be either 16, 24, or 32 bytes long
 
-PyKNOSSOS_VERSION='PyKNOSSOS1.220160312'
+PyKNOSSOS_VERSION='PyKNOSSOS1.220160504'
 
 if usermode==1:
     experimental=0
@@ -232,9 +232,9 @@ else:
 
 
 if usermode>0:
-    availableFileFormats="PyKnossos (*.nmx)"    
+    availableFileFormats=["PyKnossos (*.nmx)"] 
 else:
-    availableFileFormats="PyKnossos (*.nmx);;KNOSSOS (*.nml);;Ariadne (*.amx)"    
+    availableFileFormats= ["PyKnossos (*.nmx)","KNOSSOS (*.nml)","Ariadne (*.amx)"]
 
 selectColor=1
 deleteColor=0
@@ -2950,6 +2950,7 @@ class QRenWin(QtGui.QWidget):
         spinboxID=neuronID
         self.ariadne._SpinBoxNeuronId.setValue(spinboxID)
         self.ariadne._SpinBoxNeuronId_2.setValue(spinboxID)
+        self.ariadne._SpinBoxNeuronId_3.setValue(spinboxID)
 
         if ObjType=="neuron" or ObjType=="area":
             self.unselect()
@@ -2964,13 +2965,17 @@ class QRenWin(QtGui.QWidget):
                 self.ariadne._text_Comment.setEnabled(0)
                 self.ariadne._text_Comment_2.setEnabled(0)
                 self.ariadne._text_Comment_3.setEnabled(0)
+                self.ariadne._text_Comment_4.setEnabled(0)
                 self.ariadne.btn_DelNeuron_2.setEnabled(0)
+                self.ariadne.btn_DelNeuron_3.setEnabled(0)
                 self.ariadne.btn_DelNeuron.setEnabled(0)
             else:
                 self.ariadne._text_Comment.setEnabled(1)
                 self.ariadne._text_Comment_2.setEnabled(1)
                 self.ariadne._text_Comment_3.setEnabled(1)
+                self.ariadne._text_Comment_4.setEnabled(1)
                 self.ariadne.btn_DelNeuron_2.setEnabled(1)
+                self.ariadne.btn_DelNeuron_3.setEnabled(1)
                 self.ariadne.btn_DelNeuron.setEnabled(1)
                 self.ariadne._CertaintyLevel.setEnabled(1)
                 self.ariadne._SynClassTable.setEnabled(1)
@@ -2982,6 +2987,7 @@ class QRenWin(QtGui.QWidget):
                 self.ariadne.btn_MergeNeuron.setEnabled(1)
                 self.ariadne.btn_DelNode.setEnabled(1)
                 self.ariadne.btn_DelNode_2.setEnabled(1)
+                self.ariadne.btn_DelNode_3.setEnabled(1)
             
             if (nodeId==None) or (nodeId<0):
                 nodeId=obj.pointIdx2nodeId(0) #if no node is selected, try to select the first node
@@ -3035,6 +3041,7 @@ class QRenWin(QtGui.QWidget):
                     self.ariadne.btn_MergeNeuron.setEnabled(0)
                     self.ariadne.btn_DelNode.setEnabled(0)
                     self.ariadne.btn_DelNode_2.setEnabled(0)                    
+                    self.ariadne.btn_DelNode_3.setEnabled(0)                    
             else:
                 self.unselect()
                 self.ariadne.Neurons[neuronID].children[ObjType].select()
@@ -3042,6 +3049,7 @@ class QRenWin(QtGui.QWidget):
         
             self.ariadne._SpinBoxNodeId.setValue(np.int(nodeId))
             self.ariadne._SpinBoxNodeId_2.setValue(np.int(nodeId))
+            self.ariadne._SpinBoxNodeId_3.setValue(np.int(nodeId))
         self.ariadne.ShowComments(self.SelObj[1],self.SelObj[0],self.SelObj[2])
 
     def GotoActiveObj(self,keepframe=False):
@@ -5779,7 +5787,11 @@ class soma(objs):
         
         if NodeID.GetNumberOfTuples()==0:
             return -1,-1
-        return NodeID.GetValue(NNodes-1),NNodes-1  #last nodeId and last pointIdx
+        if NNodes==1:
+            return NodeID.GetValue(0),0
+        NodeID=vtk_to_numpy(NodeID)
+        NodeID=NodeID.tolist()
+        return NodeID,range(NNodes)  #last nodeId and last pointIdx
       
     @classmethod
     def update_VisEngine(self, alpha=None):
@@ -7011,7 +7023,11 @@ class skeleton(objs):
                 
         if NodeID.GetNumberOfTuples()==0:
             return -1,-1
-        return NodeID.GetValue(NNodes-1),NNodes-1  #last nodeId and last pointIdx
+        if NNodes==1:
+            return NodeID.GetValue(0),0
+        NodeID=vtk_to_numpy(NodeID)
+        NodeID=NodeID.tolist()
+        return NodeID,range(NNodes)  #last nodeId and last pointIdx
 
     def add_node(self,newpoint):
         if 'l' in self.flags: #locked object
@@ -9129,17 +9145,23 @@ class ARIADNE(QtGui.QMainWindow):
            lambda source='spinbox1': self.GotoNode(source))        
         QtCore.QObject.connect(self._SpinBoxNeuronId_2,QtCore.SIGNAL("editingFinished()"),
            lambda  source='spinbox2': self.GotoNode(source))       
+        QtCore.QObject.connect(self._SpinBoxNeuronId_3,QtCore.SIGNAL("editingFinished()"),
+           lambda  source='spinbox3': self.GotoNode(source))       
 
         QtCore.QObject.connect(self._SpinBoxNodeId,QtCore.SIGNAL("editingFinished()"),
            lambda source='spinbox1': self.GotoNode(source))        
         QtCore.QObject.connect(self._SpinBoxNodeId_2,QtCore.SIGNAL("editingFinished()"),
            lambda  source='spinbox2': self.GotoNode(source))
+        QtCore.QObject.connect(self._SpinBoxNodeId_3,QtCore.SIGNAL("editingFinished()"),
+           lambda  source='spinbox3': self.GotoNode(source))
            
         QtCore.QObject.connect(self._text_Comment,QtCore.SIGNAL("textEdited(QString)"), 
            lambda  value, obj="SelObj", key="comment": self.ChangeComment(obj,key,unicode(value)))
         QtCore.QObject.connect(self._text_Comment_2,QtCore.SIGNAL("textEdited(QString)"), 
            lambda  value, obj="SelObj", key="comment": self.ChangeComment(obj,key,unicode(value)))
         QtCore.QObject.connect(self._text_Comment_3,QtCore.SIGNAL("textEdited(QString)"), 
+           lambda  value, obj="SelObj", key="comment": self.ChangeComment(obj,key,unicode(value)))
+        QtCore.QObject.connect(self._text_Comment_4,QtCore.SIGNAL("textEdited(QString)"), 
            lambda  value, obj="SelObj", key="comment": self.ChangeComment(obj,key,unicode(value)))
 
         QtCore.QObject.connect(self.ckbx_MaximizeJobTab,QtCore.SIGNAL("stateChanged(int)"),self.MaxMinJobTab)
@@ -9160,8 +9182,11 @@ class ARIADNE(QtGui.QMainWindow):
         QtCore.QObject.connect(self.btn_DelNode,QtCore.SIGNAL("clicked()"),self.DelNode)
 
         QtCore.QObject.connect(self.btn_NewNeuron_2,QtCore.SIGNAL("clicked()"),self.NewNeuron)
+        QtCore.QObject.connect(self.btn_NewNeuron_3,QtCore.SIGNAL("clicked()"),self.NewNeuron)
         QtCore.QObject.connect(self.btn_DelNeuron_2,QtCore.SIGNAL("clicked()"),self.DelNeuron)
+        QtCore.QObject.connect(self.btn_DelNeuron_3,QtCore.SIGNAL("clicked()"),self.DelNeuron)
         QtCore.QObject.connect(self.btn_DelNode_2,QtCore.SIGNAL("clicked()"),self.DelNode)
+        QtCore.QObject.connect(self.btn_DelNode_3,QtCore.SIGNAL("clicked()"),self.DelNode)
 
 
         QtCore.QObject.connect(self.btn_Syn_assign,QtCore.SIGNAL("clicked()"),self.synapse_browser.set_attributes)
@@ -9186,6 +9211,7 @@ class ARIADNE(QtGui.QMainWindow):
         QtCore.QObject.connect(self.btn_LoadSkel2TIFFPath,QtCore.SIGNAL("clicked()"),lambda obj='Skel2TIFFPath': self.SetPath(obj))
         QtCore.QObject.connect(self.btn_CreateTIFFStack,QtCore.SIGNAL("clicked()"),self.Skel2TIFF)
 
+        QtCore.QObject.connect(self.btn_SkelNodes2Soma,QtCore.SIGNAL("clicked()"),self.SkelNodes2Soma)
 
     def SearchTask(self,direction='next'):
         if not self.job:
@@ -9376,7 +9402,13 @@ class ARIADNE(QtGui.QMainWindow):
         if NPoints==0:
             return
             
-        obj=self.Neurons[NeuronID].children["skeleton"]
+        if not "skeleton" in self.Neurons[NeuronID].children:
+            color=self.Neurons[NeuronID].LUT.GetTableValue(\
+                self.Neurons[NeuronID].colorIdx)
+            obj=skeleton(self.Neurons[NeuronID].item,NeuronID,color)
+            self.Neurons[newNeuronID].children["skeleton"]=obj
+        else:           
+            obj=self.Neurons[NeuronID].children["skeleton"]
         
         newNodeIds,newPointIdxs=obj.add_node(tempData.GetPoints())
         if newPointIdxs.__class__.__name__=='list':
@@ -9438,7 +9470,15 @@ class ARIADNE(QtGui.QMainWindow):
         NeuronID=np.round(self._SpinBox_MergeWholeNeuronId.value(),3)
         if not (NeuronID in self.Neurons):
             self.NewNeuron(NeuronID)
-        target=self.Neurons[NeuronID].children["skeleton"]
+
+        if not "skeleton" in self.Neurons[NeuronID].children:
+            color=self.Neurons[NeuronID].LUT.GetTableValue(\
+                self.Neurons[NeuronID].colorIdx)
+            target=skeleton(self.Neurons[NeuronID].item,NeuronID,color)
+            self.Neurons[NeuronID].children["skeleton"]=target
+        else:           
+            target=self.Neurons[NeuronID].children["skeleton"]
+
         newNodeIds,newPointIdxs=target.add_node(tempData.GetPoints())
         if newPointIdxs.__class__.__name__=='list':
             startPointIdx=newPointIdxs[0]
@@ -9476,10 +9516,12 @@ class ARIADNE(QtGui.QMainWindow):
         
     def NewNeuron(self,NeuronID=None):
         if NeuronID==None:
-            NeuronID=-1
-            for neuronId, obj in self.Neurons.iteritems():
-                NeuronID=max(int(obj.NeuronID),NeuronID)
-            NeuronID+=1
+            NeuronID=self._SpinBoxNeuronId.value()
+            if NeuronID in self.Neurons:
+                NeuronID=-1
+                for neuronId, obj in self.Neurons.iteritems():
+                    NeuronID=max(int(obj.NeuronID),NeuronID)
+                NeuronID+=1
         
         if NeuronID in self.Neurons:
             print "There is already a neuron width id {0}.".format(NeuronID)
@@ -9520,6 +9562,8 @@ class ARIADNE(QtGui.QMainWindow):
             NeuronId=np.round(self._SpinBoxNeuronId.value(),3)
         elif source=='spinbox2':
             NeuronId=np.round(self._SpinBoxNeuronId_2.value(),3)
+        elif source=='spinbox3':
+            NeuronId=np.round(self._SpinBoxNeuronId_3.value(),3)
 #        print NeuronId
         oldObjType=self.QRWin.SelObj[0]
         oldNeuronId=self.QRWin.SelObj[1]
@@ -9528,6 +9572,8 @@ class ARIADNE(QtGui.QMainWindow):
             self._SpinBoxNodeId.setValue(-1)
             self._SpinBoxNeuronId_2.setValue(-1)
             self._SpinBoxNodeId_2.setValue(-1)
+            self._SpinBoxNeuronId_3.setValue(-1)
+            self._SpinBoxNodeId_3.setValue(-1)
             return
         allNeurons=self.Neurons.keys()
         allNeurons.sort()
@@ -9569,6 +9615,8 @@ class ARIADNE(QtGui.QMainWindow):
                 NodeId=np.int(self._SpinBoxNodeId.value())
             elif source=='spinbox2':
                 NodeId=np.int(self._SpinBoxNodeId_2.value())
+            elif source=='spinbox3':
+                NodeId=np.int(self._SpinBoxNodeId_3.value())
 
             oldNodeId=self.QRWin.SelObj[2]
             if (not ObjType) or (ObjType=='None'):
@@ -9607,10 +9655,12 @@ class ARIADNE(QtGui.QMainWindow):
                                             break
                         self._SpinBoxNodeId.setValue(np.int(NodeId))
                         self._SpinBoxNodeId_2.setValue(np.int(NodeId))
+                        self._SpinBoxNodeId_3.setValue(np.int(NodeId))
                         self.QRWin.SetActiveObj(ObjType,NeuronId,NodeId)
                 
         self._SpinBoxNeuronId.setValue(NeuronId)
         self._SpinBoxNeuronId_2.setValue(NeuronId)
+        self._SpinBoxNeuronId_3.setValue(NeuronId)
 
         self.QRWin.GotoActiveObj()
 
@@ -9755,10 +9805,12 @@ class ARIADNE(QtGui.QMainWindow):
             self._text_Comment.setText(comments["comment"])
             self._text_Comment_2.setText(comments["comment"])
             self._text_Comment_3.setText(comments["comment"])
+            self._text_Comment_4.setText(comments["comment"])
         else:
             self._text_Comment.setText('')
             self._text_Comment_2.setText('')
             self._text_Comment_3.setText('')
+            self._text_Comment_4.setText('')
 
         tagIdx=partner=certainty=className=item=None
         if objtype=="synapse" and not (obj==None):
@@ -10225,6 +10277,7 @@ class ARIADNE(QtGui.QMainWindow):
             self._text_Comment.setEnabled(0)
             self._text_Comment_2.setEnabled(0)
             self._text_Comment_3.setEnabled(0)
+            self._text_Comment_4.setEnabled(0)
 
 
         elif self.radioBtn_Tracing.isChecked():
@@ -10239,6 +10292,7 @@ class ARIADNE(QtGui.QMainWindow):
             self._text_Comment.setEnabled(1)
             self._text_Comment_2.setEnabled(1)
             self._text_Comment_3.setEnabled(1)
+            self._text_Comment_4.setEnabled(1)
 
         elif self.radioBtn_Synapses.isChecked():
             self.QRWin.TracingMode=0
@@ -10250,6 +10304,7 @@ class ARIADNE(QtGui.QMainWindow):
             self._text_Comment.setEnabled(1)
             self._text_Comment_2.setEnabled(1)
             self._text_Comment_3.setEnabled(1)
+            self._text_Comment_4.setEnabled(1)
         elif self.radioBtn_Tagging.isChecked():
             self.QRWin.TracingMode=0
             self.QRWin.SynMode=0
@@ -10258,6 +10313,7 @@ class ARIADNE(QtGui.QMainWindow):
             self._text_Comment.setEnabled(1)
             self._text_Comment_2.setEnabled(1)
             self._text_Comment_3.setEnabled(1)
+            self._text_Comment_4.setEnabled(1)
                
         self.UpdateWindowTitle()
 
@@ -11024,13 +11080,19 @@ class ARIADNE(QtGui.QMainWindow):
             CurrentPath=application_path
         else:
             CurrentPath=""
-
+        
+        selectedFilter=QtCore.QString();
         if self.comboBox_AutoSave.currentIndex()==2:
-            selectedFilter=QtCore.QString(u'KNOSSOS (*.nml)')
+            tempFileFormats=['KNOSSOS (*.nml)']
         elif self.comboBox_AutoSave.currentIndex()==3:
-            selectedFilter=QtCore.QString(u'KNOSSOS (*.nml)')
+            tempFileFormats=['KNOSSOS (*.nml)']
         elif self.comboBox_AutoSave.currentIndex()==1:
-            selectedFilter=QtCore.QString(u'PyKnossos (*.nmx)')
+            tempFileFormats=['PyKnossos (*.nmx)']
+        
+        for avFormat in availableFileFormats:
+            if not avFormat in tempFileFormats:
+                tempFileFormats.append(avFormat)
+        tempFileFormats=';;'.join(tempFileFormats)
         for neuronId, neuron_obj in self.Neurons.iteritems():
             if 'd' in neuron_obj.flags: #exclude any neurons from a demand-driven pipline from saving
                 continue
@@ -11040,7 +11102,7 @@ class ARIADNE(QtGui.QMainWindow):
                 neuronIdparts=unicode(neuronId).split('.')
                 filename=os.path.join(CurrentPath,"Neuron_id{0:{fill}4}_{1}".format(int(neuronIdparts[0]),neuronIdparts[1],fill=0))
                 
-            filename = QtGui.QFileDialog.getSaveFileName(self,"Save file as...",filename,availableFileFormats,selectedFilter);
+            filename = QtGui.QFileDialog.getSaveFileName(self,"Save file as...",filename,tempFileFormats,selectedFilter);
             if not filename:
                 return 0    
             newfile=unicode(filename)
@@ -11079,16 +11141,29 @@ class ARIADNE(QtGui.QMainWindow):
         self.UpdateWindowTitle()                                
     
     def SaveAs(self,Neurons=None):
+        
+        if self.comboBox_AutoSave.currentIndex()==2:
+            tempFileFormats=['KNOSSOS (*.nml)']
+        elif self.comboBox_AutoSave.currentIndex()==3:
+            tempFileFormats=['KNOSSOS (*.nml)']
+        elif self.comboBox_AutoSave.currentIndex()==1:
+            tempFileFormats=['PyKnossos (*.nmx)']
+        
+        for avFormat in availableFileFormats:
+            if not avFormat in tempFileFormats:
+                tempFileFormats.append(avFormat)
+        tempFileFormats=';;'.join(tempFileFormats)
+        
         if os.path.exists(os.path.dirname(self.CurrentFile)):
             filename=self.CurrentFile
             basepath, basename = os.path.split(unicode(filename))
             basename, ext = os.path.splitext(basename)
             filename = os.path.join(basepath,basename)
-            filename = QtGui.QFileDialog.getSaveFileName(self,"Save file as...",filename,availableFileFormats);
+            filename = QtGui.QFileDialog.getSaveFileName(self,"Save file as...",filename,tempFileFormats);
         elif os.path.isdir(application_path):
-            filename = QtGui.QFileDialog.getSaveFileName(self,"Save file as...",application_path,availableFileFormats);
+            filename = QtGui.QFileDialog.getSaveFileName(self,"Save file as...",application_path,tempFileFormats);
         else:
-            filename = QtGui.QFileDialog.getSaveFileName(self,"Save file as...","",availableFileFormats);
+            filename = QtGui.QFileDialog.getSaveFileName(self,"Save file as...","",tempFileFormats);
         if not filename:
             return 0
 
@@ -12821,8 +12896,8 @@ class ARIADNE(QtGui.QMainWindow):
         timerOffset=self.Timer.timerOffset
         for ineuron in range(Data.size):
             tempData=Data[ineuron]
-            NeuronID=np.round(tempData.Attributes.id.astype('float'),3)
-
+            #NeuronID=np.round(tempData.Attributes.id.astype('float'),3)
+            NeuronID=np.round(float(tempData.Attributes.id),3)
             oldNeuronID=NeuronID
             step=1
             while self.Neurons.has_key(NeuronID):
@@ -12939,7 +13014,7 @@ class ARIADNE(QtGui.QMainWindow):
                             if time.__len__()==0:
                                 continue
                         else:
-                            if time.size==0:
+                            if time.__sizeof__()==0:
                                 continue
                         time=np.float(time)
                         if time>0.0:
@@ -13099,6 +13174,56 @@ class ARIADNE(QtGui.QMainWindow):
         vtkAVIWriter.Write()
         self.QRWin.RenderWindow.Render()
         self.text_CapturePath.setText(filename)
+        
+    def SkelNodes2Soma(self):
+        SelObj=self.QRWin.SelObj
+        if (not SelObj):
+            return None,-1            
+        if SelObj.__len__()<3:
+            return None,-1
+        NeuronID=SelObj[1]
+        if not (NeuronID in self.Neurons):
+            return None,-1
+        if not (SelObj[0]=="skeleton"):
+            return None,-1
+        if not "skeleton" in self.Neurons[NeuronID].children:
+            return None,-1
+        child=self.Neurons[NeuronID].children["skeleton"]
+        
+        Sphere = vtk.vtkSphereSource()
+        Sphere.SetPhiResolution(self.SpinBoxSphereRes.value())
+        Sphere.SetThetaResolution(self.SpinBoxSphereRes.value())
+        Sphere.SetRadius(self.SpinBox_SomaRadius.value()*1000.0)
+        Sphere.Update()
+        
+        child.validData.Update()
+        SomaCenters=child.validData.GetOutput()
+
+        NodeIDs=SomaCenters.GetPointData().GetArray("NodeID")
+        nodeIds=list(vtk_to_numpy(NodeIDs))
+
+        for ipoint in range(SomaCenters.GetNumberOfPoints()):
+            Sphere.SetCenter(SomaCenters.GetPoint(ipoint))
+            Sphere.Update()
+            SomaData=Sphere.GetOutput()
+            
+            neuronId = self.NewNeuron()
+            
+            parent_obj=self.Neurons[neuronId]
+            obj_color=parent_obj.LUT.GetTableValue(parent_obj.colorIdx)
+            objtype="soma";
+            obj=globals()[objtype](parent_obj.item,neuronId,obj_color)
+            parent_obj.children[objtype]=obj
+            obj.set_nodes(SomaData.GetPoints())
+            obj.start_VisEngine(self)
+
+            obj.comments.set(0,child.comments.get(nodeIds[ipoint]))
+            
+        child.delete_node(nodeIds)
+        self.SetSomaVisibility()
+
+        
+    
 
     def CreateGIF(self):
         filename=unicode(self.text_GIFPath.text())
@@ -13222,7 +13347,7 @@ class ARIADNE(QtGui.QMainWindow):
             elif not (filename.endswith('.nmx') or filename.endswith('.nml')):
                 continue
             basepath, basename = os.path.split(filename)
-            basename, ext = os.path.splitext(basename)
+            basename, ext = os.path.splitext(basename)  
             if not basename:
                 continue
             if ext==u'.nml' or ext=='.nml':
