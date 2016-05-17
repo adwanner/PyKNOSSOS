@@ -381,7 +381,7 @@
             <string>Encrypt file</string>
            </property>
            <property name="checked">
-            <bool>true</bool>
+            <bool>false</bool>
            </property>
           </widget>
          </widget>
@@ -2976,6 +2976,9 @@
           <property name="text">
            <string>show all</string>
           </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
          </widget>
          <widget class="QRadioButton" name="radioBtn_showactiveneuron">
           <property name="geometry">
@@ -3032,7 +3035,7 @@
            <string>Hide reference</string>
           </property>
           <property name="checked">
-           <bool>true</bool>
+           <bool>false</bool>
           </property>
          </widget>
         </widget>
@@ -3062,6 +3065,9 @@
           </property>
           <property name="text">
            <string>Connect nodes</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
           </property>
          </widget>
          <widget class="QRadioButton" name="radioBtn_singlenodes">
@@ -3592,6 +3598,9 @@
           <property name="text">
            <string>Wrap around</string>
           </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
          </widget>
         </widget>
         <widget class="QGroupBox" name="groupBox_9">
@@ -3971,7 +3980,29 @@
              <string>Hide ref</string>
             </property>
             <property name="checked">
+             <bool>false</bool>
+            </property>
+           </widget>
+           <widget class="QCheckBox" name="ckbx_randomizeSynBrowsing">
+            <property name="enabled">
              <bool>true</bool>
+            </property>
+            <property name="geometry">
+             <rect>
+              <x>0</x>
+              <y>220</y>
+              <width>91</width>
+              <height>22</height>
+             </rect>
+            </property>
+            <property name="toolTip">
+             <string>Randomized browsing of synapses</string>
+            </property>
+            <property name="text">
+             <string>Random</string>
+            </property>
+            <property name="checked">
+             <bool>false</bool>
             </property>
            </widget>
           </widget>

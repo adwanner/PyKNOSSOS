@@ -12,7 +12,7 @@ NCubesPerEdge=9; #on windows NCubesPerEdge=5;
 encryptionkey='EncryptPyKnossos';
 #AES key must be either 16, 24, or 32 bytes long
 
-PyKNOSSOS_VERSION='PyKNOSSOS1.220160504'
+PyKNOSSOS_VERSION='PyKNOSSOS1.220160517'
 
 if usermode==1:
     experimental=0
@@ -3499,7 +3499,7 @@ class QRenWin(QtGui.QWidget):
             tempArray=DataSet.GetPointData().GetArray("NeuronID")
             if tempArray==None:
                 return
-            NeuronID=np.round(tempArray.GetValue(PointID),3)
+            NeuronID=float(np.round(tempArray.GetValue(PointID),3))
             if NeuronID==None:
                 return
                 
@@ -3607,7 +3607,7 @@ class QRenWin(QtGui.QWidget):
                                     if tempArray==None:
                                         PartnerNeuronID=None
                                     else:
-                                        PartnerNeuronID=np.round(tempArray.GetValue(PointID),3)
+                                        PartnerNeuronID=float(np.round(tempArray.GetValue(PointID),3))
                                     if (not PartnerNeuronID==None) and (not DataSet.GetFieldData().GetAbstractArray("ObjType")==None):
                                         ObjType2=DataSet.GetFieldData().GetAbstractArray("ObjType").GetValue(0)
                                         obj2=self.ariadne.Neurons[PartnerNeuronID].children[ObjType2]
@@ -3645,7 +3645,7 @@ class QRenWin(QtGui.QWidget):
                         currTask=self.ariadne.job.get_current_task()
                         if not currTask==None:
                             if currTask._tasktype=="synapse_detection":
-                                NeuronID= np.round(currTask._neuronId,3)
+                                NeuronID= float(np.round(currTask._neuronId,3))
                                 Point0 = currTask.pathPt[currTask._currPathId]
                     if self.SelObj[0]=="skeleton":
                         if NeuronID==None:
@@ -3880,7 +3880,7 @@ class QRenWin(QtGui.QWidget):
                 if tempArray==None:
                     return
                 NeuronID=self.SelObj[1]
-                newNeuronID=np.round(tempArray.GetValue(PointID),3)
+                newNeuronID=float(np.round(tempArray.GetValue(PointID),3))
                 if not (NeuronID==newNeuronID):
                     return
 
@@ -3964,7 +3964,7 @@ class QRenWin(QtGui.QWidget):
                         if tempArray==None:
                             NeuronID=None
                         else:
-                            NeuronID=np.round(tempArray.GetValue(PointID),3)
+                            NeuronID=float(np.round(tempArray.GetValue(PointID),3))
                         if not (NeuronID==None):
                             ObjType2=DataSet.GetFieldData().GetAbstractArray("ObjType").GetValue(0)
                             if ObjType2=="skeleton":
@@ -4056,7 +4056,7 @@ class QRenWin(QtGui.QWidget):
                     if tempArray==None:
                         NeuronID=None
                     else:
-                        NeuronID=np.round(tempArray.GetValue(PointID),3)
+                        NeuronID=float(np.round(tempArray.GetValue(PointID),3))
 
                     if not (NeuronID==None):
                         ObjType=DataSet.GetFieldData().GetAbstractArray("ObjType").GetValue(0)
@@ -4242,16 +4242,16 @@ class QRenWin(QtGui.QWidget):
 
         elif key == QtCore.Qt.Key_Right:
             if self.SynMode:
-                currTask=self.ariadne.job.get_current_task()
-                if not (not currTask):
-                    if currTask._tasktype=="synapse_detection":
-                        self.ariadne.synapse_browser.search_synapse("forward")
+#                currTask=self.ariadne.job.get_current_task()
+#                if not (not currTask):
+#                    if currTask._tasktype=="synapse_detection":
+                self.ariadne.synapse_browser.search_synapse("forward")
         elif key == QtCore.Qt.Key_Left:
             if self.SynMode:
-                currTask=self.ariadne.job.get_current_task()
-                if not (not currTask):
-                    if currTask._tasktype=="synapse_detection":
-                        self.ariadne.synapse_browser.search_synapse("backward")
+#                currTask=self.ariadne.job.get_current_task()
+#                if not (not currTask):
+#                    if currTask._tasktype=="synapse_detection":
+                self.ariadne.synapse_browser.search_synapse("backward")
         elif key == QtCore.Qt.Key_I:
             if self.TracingMode>0:
                 self.ariadne.NewNeuron()   
@@ -4630,37 +4630,44 @@ class objs():
         for key, child in self.children.iteritems():
             child.set_new_neuronId(neuronId)
         
-    def get_prev_obj(self,start_Idx=None):
+    def get_prev_obj(self,start_Idx=None,warparound=True):
         NObjs=self.data.GetNumberOfCells()
         if start_Idx==None:
             newIdx=NObjs-1
         else:
             newIdx=start_Idx-1
         if newIdx<0:
-            newIdx=NObjs-1 #wrap around
+            if warparound:
+                newIdx=NObjs-1 #wrap around
+            else:
+                newIdx=None
 #        print newIdx
         return newIdx
 
-    def get_next_obj(self,start_Idx=None):
+    def get_next_obj(self,start_Idx=None,warparound=True):
         NObjs=self.data.GetNumberOfCells()
         if start_Idx==None:
             newIdx=0
         else:
             newIdx=start_Idx+1
         if newIdx>(NObjs-1):
-            newIdx=0 #wrap around
+            if warparound:
+                newIdx=0 #wrap around
+            else:
+                newIdx=None
 #        print newIdx
         return newIdx
 
-    def search_child(self,objtype,start_nodeId=None,direction="forward"):
+    def search_child(self,objtype,start_nodeId=None,direction=None,warparound=True):
         if not objtype in self.children:
             return None
         obj=self.children[objtype]
         start_idx=obj.nodeId2tagIdx(start_nodeId)
         if direction=="forward":
-            return obj.get_next_obj(start_idx)
-        else:
-            return obj.get_prev_obj(start_idx)
+            return obj.get_next_obj(start_idx,warparound)
+        elif direction=="backward":
+            return obj.get_prev_obj(start_idx,warparound)
+        return start_idx
                 
     def search_comment(self,keys,values,start_id=None,direction="forward",search_children=False):
         #!!!NOTE: this might not work for nested child-structures (eg. children of children)
@@ -7865,28 +7872,30 @@ class synapse(objs):
         return np.array(DataSet.GetPoint(pointIdx),dtype=np.float), nodeId, tagIdx
 
 
-    def get_prev_obj(self,start_Idx=None):
+    def get_prev_obj(self,start_Idx=None,warparound=True):
         NCells=self.data.GetNumberOfCells()
         if start_Idx==None:
             start_Idx=NCells-1
         else:
             start_Idx-=1
         celllist=range(start_Idx,-1,-1)
-        celllist.extend(range(NCells-1,start_Idx,-1))
+        if warparound:
+            celllist.extend(range(NCells-1,start_Idx,-1))
         for icell in celllist:
             if self.data.GetCell(icell).GetCellType()==vtk.VTK_POLY_LINE:
 #                print icell
                 return icell
         return None
 
-    def get_next_obj(self,start_Idx=None):
+    def get_next_obj(self,start_Idx=None,warparound=True):
         NCells=self.data.GetNumberOfCells()
         if start_Idx==None:
             start_Idx=0
         else:
             start_Idx+=1
         celllist=range(start_Idx,NCells)
-        celllist.extend(range(0,start_Idx))
+        if warparound:
+            celllist.extend(range(0,start_Idx))
         for icell in celllist:
             if self.data.GetCell(icell).GetCellType()==vtk.VTK_POLY_LINE:
 #                print icell
@@ -9389,7 +9398,7 @@ class ARIADNE(QtGui.QMainWindow):
         self.QRWin.GotoActiveObj()
         
     def MergeConComp(self):
-        NeuronID=np.round(self._SpinBox_MergeNeuronId.value(),3)
+        NeuronID=float(np.round(self._SpinBox_MergeNeuronId.value(),3))
         if not (NeuronID in self.Neurons):
             self.SplitByConComp(NeuronID)
             return
@@ -9467,7 +9476,7 @@ class ARIADNE(QtGui.QMainWindow):
         if NPoints==0:
             return
 
-        NeuronID=np.round(self._SpinBox_MergeWholeNeuronId.value(),3)
+        NeuronID=float(np.round(self._SpinBox_MergeWholeNeuronId.value(),3))
         if not (NeuronID in self.Neurons):
             self.NewNeuron(NeuronID)
 
@@ -9559,11 +9568,11 @@ class ARIADNE(QtGui.QMainWindow):
         if  source==None:
             NeuronId=self.QRWin.SelObj[1]        
         elif source=='spinbox1':
-            NeuronId=np.round(self._SpinBoxNeuronId.value(),3)
+            NeuronId=float(np.round(self._SpinBoxNeuronId.value(),3))
         elif source=='spinbox2':
-            NeuronId=np.round(self._SpinBoxNeuronId_2.value(),3)
+            NeuronId=float(np.round(self._SpinBoxNeuronId_2.value(),3))
         elif source=='spinbox3':
-            NeuronId=np.round(self._SpinBoxNeuronId_3.value(),3)
+            NeuronId=float(np.round(self._SpinBoxNeuronId_3.value(),3))
 #        print NeuronId
         oldObjType=self.QRWin.SelObj[0]
         oldNeuronId=self.QRWin.SelObj[1]
@@ -10603,7 +10612,7 @@ class ARIADNE(QtGui.QMainWindow):
             self.BoundingBox.UpdateBounds(bounds)
         
         if recenter:
-            self.JumpToPoint(np.array([(bounds[1]-bounds[0])/2.0,(bounds[3]-bounds[2])/2.0,(bounds[5]-bounds[4])/2.0]))    
+            self.JumpToPoint(np.array([(bounds[1]+bounds[0])/2.0,(bounds[3]+bounds[2])/2.0,(bounds[5]+bounds[4])/2.0]))    
 
         self.UpdateWindowTitle()
         return 1
@@ -10677,6 +10686,7 @@ class ARIADNE(QtGui.QMainWindow):
                     step=1
                     while Neurons.has_key(neuronId):
                         neuronId=oldneuronId+step*0.001
+                        neuronId=float(np.round(neuronId,3))
                         step+=1
 
                     print "tree id: {0}".format(neuronId)
@@ -10803,6 +10813,7 @@ class ARIADNE(QtGui.QMainWindow):
                         step=1
                         while Neurons.has_key(NeuronID):
                             NeuronID=oldNeuronID+step*0.001
+                            NeuronID=float(np.round(NeuronID,3))
                             step+=1
     
                         print "tree id: {0}".format(NeuronID)
@@ -10818,6 +10829,7 @@ class ARIADNE(QtGui.QMainWindow):
                         step=1
                         while Neurons.has_key(NeuronID):
                             NeuronID=oldNeuronID+step*0.001
+                            NeuronID=float(np.round(NeuronID,3))
                             step+=1
     
                         print "tree id: {0}".format(NeuronID)
@@ -10837,6 +10849,7 @@ class ARIADNE(QtGui.QMainWindow):
                         step=1
                         while Neurons.has_key(NeuronID):
                             NeuronID=oldNeuronID+step*0.001
+                            NeuronID=float(np.round(NeuronID,3))
                             step+=1
     
                         print "tree id: {0}".format(NeuronID)
@@ -10870,6 +10883,7 @@ class ARIADNE(QtGui.QMainWindow):
                         step=1
                         while Neurons.has_key(NeuronID):
                             NeuronID=oldNeuronID+step*0.001
+                            NeuronID=float(np.round(NeuronID,3))
                             step+=1
     
                         print "tree id: {0}".format(NeuronID)
@@ -10920,6 +10934,7 @@ class ARIADNE(QtGui.QMainWindow):
                     step=1
                     while self.Neurons.has_key(NeuronID):
                         NeuronID=oldNeuronID+step*0.001
+                        NeuronID=float(np.round(NeuronID,3))
                         step+=1
 
                     print "tree id: {0}".format(NeuronID)
@@ -11675,6 +11690,7 @@ class ARIADNE(QtGui.QMainWindow):
                 step=1
                 while self.Neurons.has_key(NeuronID):
                     NeuronID=oldNeuronID+step*0.001
+                    NeuronID=float(np.round(NeuronID,3))
                     step+=1
 
                 LUTIdx=int(FieldValues["coloridx"][0])
@@ -12324,6 +12340,7 @@ class ARIADNE(QtGui.QMainWindow):
                                 ddobj.Neurons.add(ph_neuron_obj2)
                                 break;
                             NeuronID=oldNeuronID+step*0.001
+                            NeuronID=float(np.round(NeuronID,3))
                             step+=1
     
     #                    print "tree id: {0}".format(NeuronID)
@@ -12897,11 +12914,12 @@ class ARIADNE(QtGui.QMainWindow):
         for ineuron in range(Data.size):
             tempData=Data[ineuron]
             #NeuronID=np.round(tempData.Attributes.id.astype('float'),3)
-            NeuronID=np.round(float(tempData.Attributes.id),3)
+            NeuronID=float(np.round(float(tempData.Attributes.id),3))
             oldNeuronID=NeuronID
             step=1
             while self.Neurons.has_key(NeuronID):
                 NeuronID=oldNeuronID+step*0.001
+                NeuronID=float(np.round(NeuronID,3))
                 step+=1
                 
             if hasattr(tempData, 'color'):
@@ -13590,7 +13608,7 @@ class ARIADNE(QtGui.QMainWindow):
 #        geofilter.Update()
 #        data=geofilter.GetOutput()
     
-        if not CubeLoader._Origin.__len__()==0:
+        if CubeLoader._Origin.__len__()==0:
             dataorigin=[0,0,0]
         else:
             dataorigin=CubeLoader._Origin
@@ -13750,6 +13768,7 @@ BorderSize=4;
 class synapse_browser:
     _IconSize=(180,180)
     currentClass=None
+    browseList=list()
     
     def __init__(self,ariadne):
         self.classes=OrderedDict()
@@ -13771,8 +13790,84 @@ class synapse_browser:
             
     def search_synapse(self,direction="forward"):
         objtype,neuronID,nodeId=self.ariadne.QRWin.SelObj
-        
         Neurons=self.ariadne.Neurons
+        if self.ariadne.ckbx_randomizeSynBrowsing.isChecked():
+            if self.browseList.__len__()==0:
+                #populate list
+                allNeuronIDs=Neurons.keys()
+                objtype="synapse"
+                for ineuronID in allNeuronIDs:
+                    inodeId=None
+                    while 1:
+                        tagIdx=Neurons[ineuronID].search_child(objtype,inodeId,direction,False)
+                        if tagIdx==None:
+                            break
+                        nodeIds=Neurons[ineuronID].children[objtype].tagIdx2nodeId(tagIdx)
+                        inodeId=nodeIds[0]
+                        self.browseList.append((ineuronID,inodeId))
+#                        print (ineuronID,inodeId)
+                random.shuffle(self.browseList)
+#                print "Populated list: \n" + "{0}\n".format(self.browseList) + "-----"
+            if (neuronID,nodeId) in self.browseList:
+                oldidx=self.browseList.index((neuronID,nodeId))
+            else:
+                oldidx=-1;
+            if direction=="backward":
+                newidx=oldidx-1
+            elif direction=="forward":
+                newidx=oldidx+1
+            else:
+                return "synapse",None,-1
+
+            if (newidx<0) or (newidx>(self.browseList.__len__()-1)):
+                #populate list
+                newlist=[]
+                allNeuronIDs=Neurons.keys()
+                objtype="synapse"
+                for ineuronID in allNeuronIDs:
+                    inodeId=None
+                    while 1:
+                        tagIdx=Neurons[ineuronID].search_child(objtype,inodeId,direction,False)
+                        if tagIdx==None:
+                            break
+                        nodeIds=Neurons[ineuronID].children[objtype].tagIdx2nodeId(tagIdx)
+                        inodeId=nodeIds[0]
+                        newlist.append((ineuronID,inodeId))
+                    
+                self.browseList=[key for key in self.browseList if key in newlist]
+                newlist=[key for key in newlist if key not in self.browseList]
+                
+                if newlist.__len__()>0:
+#                    print "New list: " + "{0}\n".format(newlist) + "------"
+                    random.shuffle(newlist)
+                    self.browseList.extend(newlist)
+#                    print "Re-populated list: \n" + "{0}\n".format(self.browseList) + "-----"
+            objtype="synapse"
+            while self.browseList.__len__()>0:
+                if newidx<0:
+                    newidx=self.browseList.__len__()-1
+                if newidx>self.browseList.__len__()-1:
+                    newidx=0
+                if newidx>self.browseList.__len__()-1:
+                    return "synapse",None,-1
+                neuronID=self.browseList[newidx][0]
+                nodeId=self.browseList[newidx][1]
+                if not neuronID in Neurons:
+#                    print "remove: " + "{0}".format(self.browseList[newidx])
+                    self.browseList.remove(self.browseList[newidx])
+                    continue
+                tagIdx=Neurons[neuronID].search_child(objtype,nodeId,None)
+                if tagIdx==None:
+#                    print "remove: " + "{0}".format(self.browseList[newidx])
+                    self.browseList.remove(self.browseList[newidx])
+                    continue
+#                print self.browseList[newidx]
+                self.ariadne.QRWin.SetActiveObj(objtype,neuronID,nodeId)
+                self.ariadne.QRWin.GotoActiveObj()
+                return objtype,neuronID,nodeId
+            return "synapse",None,-1
+
+
         if not (neuronID in Neurons):            
             allNeuronIDs=Neurons.keys()
             if direction=="backward":
@@ -14119,6 +14214,10 @@ if __name__ == "__main__":
         
         window1.btn_save_classes.setEnabled(False)
         window1.btn_save_classes.setVisible(False)
+
+        window1.ckbx_randomizeSynBrowsing.setChecked(False)
+        window1.ckbx_randomizeSynBrowsing.setEnabled(False)
+        window1.ckbx_randomizeSynBrowsing.setVisible(False)
 
     if not experimental:
         window1.ckbx_SynZoom.setEnabled(False)
