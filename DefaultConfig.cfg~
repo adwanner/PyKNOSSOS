@@ -1,9 +1,9 @@
 [ARIADNE]
 _CommentShortcuts = u, "", "", ?, u1
 _StartPosition = 1, 61, 1598, 810
-_DefaultDataPath = ""
+_DefaultDataPath = /home/wannerad/Documents/SantiagoCubedData
 _UserMode = User
-_ReferenceData = ""
+_ReferenceData = /home/wannerad/Documents/PhD/Work/temp/ReferenceSkeletons20150801.ddx
 [Orth_viewport]
 _LinkedPlaneOutlines = ,
 _EnableRotating = 0
@@ -177,8 +177,8 @@ ckbx_SynZoom = True
 ckbx_skipDoneTasks = True
 ckbx_encryptFile = True
 comboBox_TaskType = 0
-text_SeedPath = ""
-text_JobPath = ""
+text_SeedPath = /home/wannerad/temp/jobs20160310/**/*.nml
+text_JobPath = /home/wannerad/Documents/PhD/Work/KNOSSOS/E085L01_TracingTemplate.job
 ckbx_encryptJobs = True
 ckbx_deleteSeed = True
 text_DatasetPath = ""
@@ -189,13 +189,13 @@ radioBtn_GIFviewport_ZX = False
 radioBtn_GIFviewport_orth = False
 ckbx_incrementGIFFile = False
 SpinBox_Radius_2 = 0.0
-text_GIFPath = ""
+text_GIFPath = /home/wannerad/Documents/PhD/Work/Publications/2014/MethodsPaper/Synapses/Examples/synapse.gif
 SpinBox_GIFRange = 9
 SpinBox_GIFSize = 256
 SpinBox_Steps = 1.0
 ckbx_incrementCaptureFile = True
 SpinBox_CaptureMag = 10
-text_CapturePath = ""
+text_CapturePath = /home/wannerad/Documents/PhD/Work/Publications/2014/MethodsPaper/CORE/CORE_primrec_overview_scalebar_0002.png
 radioBtn_RotAxisYX = False
 radioBtn_RotAxisYZ = True
 radioBtn_RotAxisZX = False
@@ -243,7 +243,7 @@ cbkx_ShowYXScaleBar = False
 cbkx_ShowYZScaleBar = False
 SpinBox_ScaleBarWidth = 200
 ckbx_MaximizeJobTab = False
-text_Skel2TIFFPath = ""
+text_Skel2TIFFPath = /home/wannerad/temp/Santiago/TIFFstacks/SRomp393-1L/Neuron_id0019/Neuron_id0019_.tif
 ckbx_showReference = True
 ckbx_hideReference = False
 ckbx_hideReference_2 = False
@@ -251,5 +251,35 @@ ckbx_restrictVOI = False
 SpinBoxVOISize = 14.0
 SpinBox_DemDriNeighbors = 3
 ckbx_AppendCoordsGIFFile = True
+[RecentFile0]
+_File = /home/wannerad/temp/E085L01-Orph_id4022_rev1_.001.nmx
+_Name = E085L01-Orph_id4022_rev1_.001.nmx
+[RecentFile1]
+_File = /home/wannerad/Documents/PhD/Work/KNOSSOS/ForRevision/E085L01-Orph/Revision001/E085L01-Orph_id4022_rev1_.001.nml
+_Name = E085L01-Orph_id4022_rev1_.001.nml
+[RecentFile2]
+_File = /home/wannerad/Documents/PhD/Work/KNOSSOS/ForRevision/E085L01-Orph/Revision001tocheck.txt
+_Name = Revision001tocheck.txt
+[RecentFile3]
+_File = /home/wannerad/Documents/PhD/Work/Analysis/E085L01/RefSkeletons/RefSkeletons20160101.ddx
+_Name = RefSkeletons20160101.ddx
+[RecentFile4]
+_File = /home/wannerad/Documents/PhD/Work/KNOSSOS/Tracers/E041/Results/201601/E085L01-Orph/E041_E085L01-Orph_prim20160104_seed0005.030.nml
+_Name = E041_E085L01-Orph_prim20160104_seed0005.030.nml
+[Dataset0]
+_File = /media/wannerad/adwanner/Benj0034R/ariadne.conf
+_Name = Benj0034R
+[Dataset1]
+_File = /media/wannerad/adwanner/E085L01/EM/Cubes_uint8/ariadne.conf
+_Name = E085L01
 [SynapseBrowser]
 _IconSize = 180, 150
+[Dataset2]
+_File = /media/wannerad/adwanner1/Cubes/ariadne.conf
+_Name = cube
+[Dataset3]
+_File = /home/wannerad/Documents/E085L01/EM/Cubes_uint8/ariadne.conf
+_Name = E085L01
+[Dataset4]
+_File = /media/wannerad/adwanner/Cubes/ariadne.conf
+_Name = Benj0034R
