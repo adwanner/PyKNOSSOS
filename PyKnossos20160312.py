@@ -12,7 +12,7 @@ NCubesPerEdge=9; #on windows NCubesPerEdge=5;
 encryptionkey='EncryptPyKnossos';
 #AES key must be either 16, 24, or 32 bytes long
 
-PyKNOSSOS_VERSION='PyKNOSSOS1.220160517'
+PyKNOSSOS_VERSION='PyKNOSSOS1.220160520'
 
 if usermode==1:
     experimental=0
@@ -4241,17 +4241,17 @@ class QRenWin(QtGui.QWidget):
                     return
 
         elif key == QtCore.Qt.Key_Right:
-            if self.SynMode:
+#            if self.SynMode:
 #                currTask=self.ariadne.job.get_current_task()
 #                if not (not currTask):
 #                    if currTask._tasktype=="synapse_detection":
                 self.ariadne.synapse_browser.search_synapse("forward")
         elif key == QtCore.Qt.Key_Left:
-            if self.SynMode:
+#            if self.SynMode:
 #                currTask=self.ariadne.job.get_current_task()
 #                if not (not currTask):
 #                    if currTask._tasktype=="synapse_detection":
-                self.ariadne.synapse_browser.search_synapse("backward")
+            self.ariadne.synapse_browser.search_synapse("backward")
         elif key == QtCore.Qt.Key_I:
             if self.TracingMode>0:
                 self.ariadne.NewNeuron()   
@@ -4492,13 +4492,25 @@ class CenterGlyph():
     
 
 class Comments():
-    def __init__(self):
+    parent=None
+    def __init__(self,parent):
         self._Comments=OrderedDict()
+        self.parent=parent
 
     def ids(self):
-        return self._Comments.keys()
+        return [key for key in self._Comments.keys() if (self._Comments[key].__class__.__name__=='OrderedDict' or self._Comments[key].__class__.__name__=='dict')]
         
     def delete(self,Id,key=None):
+        if Id==self.parent:  
+            if not key:
+                return
+            try:
+                #remove attribute
+                del self._Comments[key]
+            except:
+                1
+            return            
+
         Id=unicode(Id)
         if not key:
             try:
@@ -4518,6 +4530,20 @@ class Comments():
         if Id==None:
             return
         if key==None:
+            return
+        if Id==self.parent:  
+            if value==None:
+                if key.__class__.__name__=='OrderedDict' or \
+                    key.__class__.__name__=='dict':
+                        self._Comments.update(key)
+                        return
+                try:
+                    #remove attribute
+                    del self._Comments[key]
+                except:
+                    1
+                return 
+            self._Comments[key]=value
             return
         Id=unicode(Id)
         if value==None:
@@ -4545,6 +4571,18 @@ class Comments():
                     comments[iid]=OrderedDict()
                     comments[iid][key]=self._Comments[iid][key]
             return comments
+        if Id==self.parent:
+            if key==None:
+                try: 
+                    return self._Comments
+                except:
+                    return None
+            try:
+                return self._Comments[key]
+            except:
+                return None
+            return
+            
         Id=unicode(Id)
         if key==None:
             try: 
@@ -4580,7 +4618,7 @@ class objs():
         self.visible=1;
         self.colorIdx=-1
         self.children=OrderedDict()
-        self.comments=Comments()
+        self.comments=Comments(self)
         self.flags='';
         
     def inherit_method(self,method):
@@ -4625,7 +4663,14 @@ class objs():
         if hasattr(self,'item'):
             if hasattr(self.item,'neuronId'):
                 self.item.neuronId=neuronId
-            self.item.setText("{0} {1}".format(self.objtype,neuronId))
+            for irow in range(self.item.rowCount()):
+                child=self.item.child(irow)
+                if not child:
+                    continue
+                if hasattr(child,'neuronId'):
+                    child.neuronId=neuronId
+            
+            self.updateItem()
 
         for key, child in self.children.iteritems():
             child.set_new_neuronId(neuronId)
@@ -4672,6 +4717,7 @@ class objs():
     def search_comment(self,keys,values,start_id=None,direction="forward",search_children=False):
         #!!!NOTE: this might not work for nested child-structures (eg. children of children)
         allIds=self.comments.ids()
+#        print "allIds: " + "{0}".format(allIds)
         
         if direction=="backward":
             allIds.reverse()
@@ -5472,16 +5518,32 @@ class objs():
         
     def appendItem(self,parentItem):
         if not self.item:
-            if self.NeuronID==None:
-                self.item=QtGui.QStandardItem("{0}".format(self.objtype))            
-            else:
-                self.item=QtGui.QStandardItem("{0} {1}".format(self.objtype,self.NeuronID))
-                self.item.objtype=self.objtype
-                self.item.neuronId=self.NeuronID
-                self.item.obj=self
+            self.item=QtGui.QStandardItem("")
+            
+            self.item.objtype=self.objtype
+            self.item.neuronId=self.NeuronID
+            self.item.obj=self
         if not (not parentItem):
             parentItem.appendRow(self.item)
+        self.updateItem()
 
+    def updateItem(self):
+        if not self.item:
+            return
+        comment=self.comments.get(self,"comment")
+        if not comment:
+            comment==""
+            
+        itemstr="{0}".format(self.objtype);
+        
+        if not self.NeuronID==None:
+            itemstr+= " {0}".format(self.NeuronID)
+            
+        if not (not comment):
+            itemstr+= ": {0}".format(comment)
+
+        self.item.setText(itemstr)
+        
     def get_obj_info(self,ipoint,icell):
         info_str=extractObjInfo(self.data.GetCellData(),icell)
         info_str+=extractObjInfo(self.data.GetPointData(),ipoint)
@@ -7632,7 +7694,12 @@ class synapse(objs):
         NSynapses=Connections.GetNumberOfCells()
         for isyn in range(NSynapses):
             if not self.item.__class__()==[]:
-                tagItem=QtGui.QStandardItem("{0} {1}".format(self.objtype,isyn))            
+                nodeId=NodeIDArray.GetValue(isyn*3)
+                tagItem=QtGui.QStandardItem("{0} {1}".format(self.objtype,int(nodeId/3.0)))            
+                tagItem.nodeId=nodeId
+                tagItem.objtype=self.objtype
+                tagItem.neuronId=self.NeuronID
+                
                 self.item.appendRow(tagItem)
 
         self.data.BuildCells()
@@ -7713,7 +7780,10 @@ class synapse(objs):
         tagIdx=self.data.InsertNextCell(vtk.VTK_POLY_LINE,tempBranch)        
                 
         if not self.item.__class__()==[]:
-            tagItem=QtGui.QStandardItem("{0} {1}".format(self.objtype,int(nodeIds[0]/3.0)))            
+            tagItem=QtGui.QStandardItem("{0} {1}".format(self.objtype,int(nodeIds[0]/3.0)))
+            tagItem.nodeId=nodeIds[0]
+            tagItem.objtype=self.objtype
+            tagItem.neuronId=self.NeuronID
             self.item.appendRow(tagItem)
 
         self.data.BuildCells()
@@ -8309,7 +8379,11 @@ class tag(objs):
 
         for pointIdx in range(NPoints):
             if not (not self.item):
-                tagItem=QtGui.QStandardItem("tag  {0}".format(NodeIDArray.GetValue(pointIdx)))            
+                tagId=NodeIDArray.GetValue(pointIdx)
+                tagItem=QtGui.QStandardItem("tag  {0}".format(tagId))            
+                tagItem.nodeId=tagId
+                tagItem.objtype=self.objtype
+                tagItem.neuronId=self.NeuronID
                 self.item.appendRow(tagItem)
     
         self.data.BuildCells()
@@ -8374,7 +8448,10 @@ class tag(objs):
             self.data.InsertNextCell(vtk.VTK_VERTEX,vertex)
 
             if not (not self.item):
-                tagItem=QtGui.QStandardItem("tag {0}".format(nodeId))            
+                tagItem=QtGui.QStandardItem("tag {0}".format(nodeId))
+                tagItem.nodeId=nodeId
+                tagItem.objtype=self.objtype
+                tagItem.neuronId=self.NeuronID
                 self.item.appendRow(tagItem)    
 
         self.data.BuildCells()
@@ -8591,11 +8668,7 @@ class ARIADNE(QtGui.QMainWindow):
         self.QRWin.ariadne=self
                 
         self.ObjectBrowser=ObjectBrowser(self.ObjectBrowser)
-        TreeModel=QtGui.QStandardItemModel(self.ObjectBrowser)
-        self.ObjectBrowser.setModel(TreeModel)        
-        self.ObjectBrowser.setSelectionModel(QtGui.QItemSelectionModel(TreeModel))
-        TreeModel.setHorizontalHeaderLabels(["Objects"])
-        
+
         myconfig.LoadConfig(self,"ARIADNE")
 
         NTableValues=256;
@@ -8870,6 +8943,7 @@ class ARIADNE(QtGui.QMainWindow):
 
         self.Job.setFloating(0)
         self.Settings.setFloating(0)
+                      
         
         if showconsole:
             self.Console.setFloating(0)
@@ -11155,15 +11229,15 @@ class ARIADNE(QtGui.QMainWindow):
         self.Timer.changesSaved=1
         self.UpdateWindowTitle()                                
     
-    def SaveAs(self,Neurons=None):
-        
+    def SaveAs(self,Neurons=None):        
+        tempFileFormats=['PyKnossos (*.nmx)']
         if self.comboBox_AutoSave.currentIndex()==2:
             tempFileFormats=['KNOSSOS (*.nml)']
         elif self.comboBox_AutoSave.currentIndex()==3:
             tempFileFormats=['KNOSSOS (*.nml)']
         elif self.comboBox_AutoSave.currentIndex()==1:
             tempFileFormats=['PyKnossos (*.nmx)']
-        
+            
         for avFormat in availableFileFormats:
             if not avFormat in tempFileFormats:
                 tempFileFormats.append(avFormat)
@@ -12013,13 +12087,16 @@ class ARIADNE(QtGui.QMainWindow):
                     maxTime=0.0 #reset time as we save single files if KNOSSOSflag is off
                 
                 color=child.LUT.GetTableValue(child.colorIdx)
+                comment=child.comments.get(child,'comment')
+                if not comment:
+                    comment=""
                 childET=lxmlET.SubElement(root,'thing',{\
                     'id':unicode(neuronId),\
                     'color.r':unicode(color[0]),\
                     'color.g':unicode(color[1]),\
                     'color.b':unicode(color[2]),\
                     'color.a':unicode(color[3]),\
-                    'comment':unicode(child.comments.get('comment'))})
+                    'comment':unicode(comment)})
 
                 Data=child.get_cleanedup_data()
                 NPoints=Data.GetNumberOfPoints()
@@ -12232,7 +12309,7 @@ class ARIADNE(QtGui.QMainWindow):
     def UpdateDemDriFiles(self,FocalPoint,forceflag=False):
         if not self.DemDriFiles:
             return
-        startTime=time.time()
+#        startTime=time.time()
 
         if invalidvector(FocalPoint):
             x=self.SpinBoxX.value()*self.DataScale[0]
@@ -12733,6 +12810,13 @@ class ARIADNE(QtGui.QMainWindow):
 
                 if neuronId==None:
                     continue
+
+                try: 
+                    obj_comment=unicode(tree.get('comment'))
+                except:
+                    obj_comment=unicode("")
+
+
                 if neuronId in Neurons:
                     parent_obj=Neurons[neuronId]
                     parentData=tempData[neuronId]
@@ -12777,7 +12861,11 @@ class ARIADNE(QtGui.QMainWindow):
                     parentData[objtype]["Points"]=Points
                 
                 obj.flags="".join(set(obj.flags+flags)) #creates a string with unique flags
-
+                
+                if not (not obj_comment):
+                    if not (obj_comment=='None' or obj_comment=='NONE'):
+                        obj.comments.set(obj,"comment",obj_comment)
+                        obj.updateItem()
 
                 NNodes=0
                 try:
@@ -12922,13 +13010,21 @@ class ARIADNE(QtGui.QMainWindow):
                 NeuronID=float(np.round(NeuronID,3))
                 step+=1
                 
-            if hasattr(tempData, 'color'):
+            if hasattr(tempData.Attributes, 'color'):
                 #might want to validate input
-                color=tempData.color
+                color=tempData.Attributes.color
             else:
 #                ineuron=self.Neurons.__len__()
                 color=self.get_autocolor(ineuron)
-            
+
+
+            if hasattr(tempData.Attributes, 'comment'):
+                #might want to validate input
+                obj_comment=unicode(tempData.Attributes.comment)
+            else:
+#                ineuron=self.Neurons.__len__()
+                obj_comment=unicode("")
+
             Neurons[NeuronID]=neuron(self.ObjectBrowser.model(),NeuronID,color)
                 
             if hasattr(tempData, 'activity'):
@@ -12985,6 +13081,12 @@ class ARIADNE(QtGui.QMainWindow):
             
             if tempData.__dict__.has_key('branches'):
                 child=skeleton(Neurons[NeuronID].item,NeuronID,color)
+                
+                if not (not obj_comment):
+                    if not (obj_comment=='None' or obj_comment=='NONE'):
+                        child.comments.set(child,"comment",obj_comment)
+                        child.updateItem()
+                
                 NodeID=vtk.vtkIdTypeArray()
                 Points=vtk.vtkPoints()
                 if hasattr(tempData.nodes,'size'):
@@ -13538,7 +13640,6 @@ class ARIADNE(QtGui.QMainWindow):
                 self.Job.resize(remainingWidth,450)
 
     def BrowserSelectionChanged(self):
-#        print "BrowserSelectionChanged"
         item=self.ObjectBrowser.model().itemFromIndex(self.ObjectBrowser.currentIndex())
         if not item:
             return
@@ -13549,9 +13650,16 @@ class ARIADNE(QtGui.QMainWindow):
         ObjType=item.objtype
         neuronID=item.neuronId
 #        print ObjType, neuronID, self.QRWin.SelObj
-        if (self.QRWin.SelObj[0]==ObjType) and (self.QRWin.SelObj[1]==neuronID):
+        if hasattr(item,'nodeId'):
+            nodeId=item.nodeId
+        else:
+            nodeId=None
+        if (self.QRWin.SelObj[0]==ObjType) and (self.QRWin.SelObj[1]==neuronID) and (self.QRWin.SelObj[2]==nodeId):
             return
-        self.QRWin.SetActiveObj(ObjType,neuronID,None)
+        if (self.QRWin.SelObj[0]==ObjType) and (self.QRWin.SelObj[1]==neuronID) and (nodeId==None):
+            return
+        self.QRWin.SetActiveObj(ObjType,neuronID,nodeId)
+        self.QRWin.GotoActiveObj()
 #        print "selected: ", item.text()
 
 
@@ -13673,13 +13781,55 @@ class ObjectBrowser(QtGui.QTreeView):
     def __init__(self, parent=None):
         super(ObjectBrowser, self).__init__(parent)
 
+        TreeModel=QtGui.QStandardItemModel(self)
+        self.setModel(TreeModel)        
+        self.setSelectionModel(QtGui.QItemSelectionModel(TreeModel))
+
+        self.model().setHorizontalHeaderLabels(["Objects"])
+        self.header().setResizeMode(QtGui.QHeaderView.ResizeToContents)
+        self.header().setStretchLastSection(False)
+
+        self.show()
+        self.setEditTriggers(QtGui.QAbstractItemView.NoEditTriggers)
+
+    def focusInEvent(self, event):
+        if (self.width()==self.parent().width() and \
+            self.height()==self.parent().height()):
+            return
+        self.resize(self.parent().width(),self.parent().height())
+        print "focusin"
+        
+    
     def contextMenuEvent(self, event):
         self.menu = QtGui.QMenu(self)
-        renameAction = QtGui.QAction('Change color', self)
-        renameAction.triggered.connect(self.changeColor)
-        self.menu.addAction(renameAction)
+        chcommentAction = QtGui.QAction('Change comment', self)
+        chcommentAction.triggered.connect(self.changeComment)
+        self.menu.addAction(chcommentAction)
+
+        chcolorAction = QtGui.QAction('Change color', self)
+        chcolorAction.triggered.connect(self.changeColor)
+        self.menu.addAction(chcolorAction)
         # add other required actions
         self.menu.popup(QtGui.QCursor.pos())
+        
+    def changeComment(self):
+        self.currentIndex()
+        item=self.model().itemFromIndex(self.currentIndex())
+        if not item:
+            return
+        if not hasattr(item,'obj'):
+            return
+        obj=item.obj
+        comment=obj.comments.get(obj,"comment")
+        if not comment:
+            comment=""
+        text, ok = QtGui.QInputDialog.getText(obj.ariadne, 'Change comment', 
+            'Comment:',QtGui.QLineEdit.Normal,comment)
+        
+        if not ok:
+            return
+        obj.comments.set(obj,"comment",text)
+        obj.updateItem()
     
     def changeColor(self):
         self.currentIndex()
@@ -14255,6 +14405,13 @@ if __name__ == "__main__":
         window1.group_ScaleBar.setVisible(False)
         
     window1.ChangeCubeDataset(window1.menuDatasets[4]._File,0)
+
+    #for some reason the object browser would otherwise not extend
+    #to fill the settings tab widget.
+    currWidget=window1.SettingsTab.currentWidget()
+    window1.SettingsTab.setCurrentWidget(window1.ObjBrowserTab)
+    window1.ObjectBrowser.focusInEvent(None)
+    window1.SettingsTab.setCurrentWidget(currWidget)
     
     #jump to previous location as saved in config file
     window1.JumpToPoint()
