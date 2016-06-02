@@ -1,3 +1,9 @@
+
+
+#Non-standard dependencies of PyKNOSSOS:
+#QxtSpanSlider.py https://github.com/mkilling/QxtSpanSlider.py
+#images2gif https://bitbucket.org/bench/images2gif.py 
+
 #developer switches
 usermode=0 #0: expert mode, 1: user mode
 
@@ -12,7 +18,7 @@ NCubesPerEdge=9; #on windows NCubesPerEdge=5;
 encryptionkey='EncryptPyKnossos';
 #AES key must be either 16, 24, or 32 bytes long
 
-PyKNOSSOS_VERSION='PyKNOSSOS1.220160520'
+PyKNOSSOS_VERSION='PyKNOSSOS1.220160602'
 
 if usermode==1:
     experimental=0
@@ -4125,7 +4131,9 @@ class QRenWin(QtGui.QWidget):
             self.activeRenderer=self.Iren.FindPokedRenderer(x,y)
 
         key=ev.key()     
-        if key == QtCore.Qt.Key_S and ctrl:
+        if key == QtCore.Qt.Key_S and ctrl and shift:
+            self.ariadne.SaveSeparately()
+        elif key == QtCore.Qt.Key_S and ctrl:
             self.ariadne.Save()
         elif key == QtCore.Qt.Key_Space:
             self.ariadne.SynchronizedZoom(0.0)
@@ -4595,6 +4603,11 @@ class Comments():
             return None
 
 class objs():
+    #object flags:
+    #'d': demand-driven object
+    #'x': exclude object when saving
+    #'l': locked object (cannot edit, add, remove nodes, comments)
+    #'r': reference object flag
     maxNofColors=[2000]
     ariadne=None
     VisEngine_started=[False]
@@ -4603,7 +4616,8 @@ class objs():
     activeInstances=[];
     instancecount=[0]
     deleted=False
-
+    filename='';
+    
     def __init__(self):
         self.objtype=""
         self.name=""    
@@ -7100,7 +7114,7 @@ class skeleton(objs):
 
     def add_node(self,newpoint):
         if 'l' in self.flags: #locked object
-            return
+            return None,None
         self.new_singleactive(self)
         classname=newpoint.__class__.__name__
         if not classname=='vtkPoints':
@@ -9494,6 +9508,8 @@ class ARIADNE(QtGui.QMainWindow):
             obj=self.Neurons[NeuronID].children["skeleton"]
         
         newNodeIds,newPointIdxs=obj.add_node(tempData.GetPoints())
+        if newNodeIds==None:
+            return
         if newPointIdxs.__class__.__name__=='list':
             startPointIdx=newPointIdxs[0]
             startNodeId=newNodeIds[0]
@@ -10606,9 +10622,10 @@ class ARIADNE(QtGui.QMainWindow):
                         break;
                     except:
                         found=0
+                        print "Error: Could not load dataset {0}".format(filename)
                         continue;
             if not found:
-                print "Error: Could not find/load dataset {0}".format(filename)
+                print "Error: Could not find dataset {0}".format(filename)
                 return -1
             
         for dim in range(3):
@@ -10746,15 +10763,24 @@ class ARIADNE(QtGui.QMainWindow):
             color=None
             if linestr.__len__()>1:
                 color=linestr[1]
-                toreplace=['[',']','(',')']
-                for ichar in toreplace: color=color.replace(ichar,'')
-                color=[float(x) for x in color.split()]   
-                if not (self.comboBox_Coloring.currentIndex()==0):
-                    self.comboBox_Coloring.setCurrentIndex(0)
+                if color=='auto' or  color=='AUTO' or  color=='Auto':
+                    1
+                else:
+                    toreplace=['[',']','(',')']
+                    for ichar in toreplace: color=color.replace(ichar,'')
+                    color=[float(x) for x in color.split()]   
+#                if not (self.comboBox_Coloring.currentIndex()==0):
+#                    self.comboBox_Coloring.setCurrentIndex(0)
             flags=None
             if linestr.__len__()>2:
                 flags=linestr[2]
+            ineuron=-1
+            if not (not Neurons):
+                ineuron+=Neurons.__len__()
+            if not (not self.Neurons):
+                ineuron+=self.Neurons.__len__()
             for neuronId, neuron_obj in tempNeurons.iteritems():
+                ineuron+=1
                 if neuronId in Neurons:
                     oldneuronId=neuronId
                     step=1
@@ -10765,6 +10791,9 @@ class ARIADNE(QtGui.QMainWindow):
 
                     print "tree id: {0}".format(neuronId)
                     neuron_obj.set_new_neuronId(neuronId)
+                if color=='auto' or  color=='AUTO' or  color=='Auto':
+                    print "ineuron=",ineuron
+                    color=self.get_autocolor(ineuron)
                 if not (not color):
                     neuron_obj.change_color(color)
                 if not (not flags):
@@ -11022,10 +11051,10 @@ class ARIADNE(QtGui.QMainWindow):
 #            self.QRWin.viewports["skeleton_viewport"].Camera.SetPosition(FocalPoint-np.array([0,-1,1],dtype=np.float))      
             
             self.ChangeSkelVisMode()
-            if not (not self.job):
-                self.ChangeColorScheme(0)
-            else:                    
-                self.ChangeColorScheme()
+#            if not (not self.job):
+#                self.ChangeColorScheme(0)
+#            else:                    
+#                self.ChangeColorScheme()
             self.ChangeNeuronVisMode()
             self.ChangePlaneVisMode()
             self.ChangeBorderVisMode()
@@ -11157,11 +11186,13 @@ class ARIADNE(QtGui.QMainWindow):
         whichNeuron=SelObj[1]
         if not whichNeuron in self.Neurons:
             return
-        if 'd' in self.Neurons[whichNeuron].flags:
+        if ('d' in self.Neurons[whichNeuron].flags) or \
+                ('x' in self.Neurons[whichNeuron].flags):
             return
         Neurons2Save=OrderedDict()        
         Neurons2Save[whichNeuron]=self.Neurons[whichNeuron]
         self.SaveAs(Neurons2Save)
+        
     def SaveSeparately(self):
         if os.path.exists(os.path.dirname(self.CurrentFile)):
             CurrentPath=os.path.dirname(self.CurrentFile)
@@ -11183,18 +11214,34 @@ class ARIADNE(QtGui.QMainWindow):
                 tempFileFormats.append(avFormat)
         tempFileFormats=';;'.join(tempFileFormats)
         for neuronId, neuron_obj in self.Neurons.iteritems():
-            if 'd' in neuron_obj.flags: #exclude any neurons from a demand-driven pipline from saving
+            if ('d' in neuron_obj.flags) or \
+                ('x' in neuron_obj.flags): #exclude any neurons from a demand-driven pipline from saving
                 continue
-            if neuronId==int(neuronId):    
-                filename=os.path.join(CurrentPath,"Neuron_id{0:{fill}4}".format(int(neuronId),fill=0))
+            if not neuron_obj.filename:
+                if neuronId==int(neuronId):    
+                    newfile=os.path.join(CurrentPath,"Neuron_id{0:{fill}4}".format(int(neuronId),fill=0))
+                else:
+                    neuronIdparts=unicode(neuronId).split('.')
+                    newfile=os.path.join(CurrentPath,"Neuron_id{0:{fill}4}_{1}".format(int(neuronIdparts[0]),neuronIdparts[1],fill=0))
             else:
-                neuronIdparts=unicode(neuronId).split('.')
-                filename=os.path.join(CurrentPath,"Neuron_id{0:{fill}4}_{1}".format(int(neuronIdparts[0]),neuronIdparts[1],fill=0))
+                newfile=neuron_obj.filename
+
+    
+            filename, fileext = os.path.splitext(newfile)
+            if self.ckbx_incrementFile.isChecked():
+                result = re.search(r'(.+)\.(\d+)$', filename)
+                if result==None:
+                    filenumber=1
+                else:
+                    filename=result.group(1)
+                    filenumber=np.int(result.group(2))+1
                 
-            filename = QtGui.QFileDialog.getSaveFileName(self,"Save file as...",filename,tempFileFormats,selectedFilter);
-            if not filename:
+                newfile=r"{0}.{1:{fill}3}{2}".format(filename,filenumber,fileext,fill=0)
+                                
+            newfile = QtGui.QFileDialog.getSaveFileName(self,"Save neurons seperately as...",newfile,tempFileFormats,selectedFilter);
+            if not newfile:
                 return 0    
-            newfile=unicode(filename)
+            newfile=unicode(newfile)
             selectedFilter=unicode(selectedFilter)
             Neuron=OrderedDict()
             Neuron[neuronId]=neuron_obj
@@ -11310,10 +11357,10 @@ class ARIADNE(QtGui.QMainWindow):
             if os.path.isfile(jobfile):
                 os.remove(jobfile)
 
-    def LoadAMXFile(self,filename):
-        basepath, basename = os.path.split(unicode(filename))
+    def LoadAMXFile(self,origfilename):
+        basepath, basename = os.path.split(unicode(origfilename))
         basename, ext = os.path.splitext(basename)
-        zipf=ZipFile(filename,'r')
+        zipf=ZipFile(origfilename,'r')
         targetdir=os.path.join(application_path,'temp')
         targetdir=os.path.join(targetdir,basename)
         if not os.path.isdir(targetdir):
@@ -11342,6 +11389,10 @@ class ARIADNE(QtGui.QMainWindow):
             self.job.load_job()
         if os.path.isdir(targetdir):
             shutil.rmtree(targetdir)
+
+
+        for neuronId, neuron_obj in Neurons.iteritems():
+            neuron_obj.filename=origfilename
         return Neurons, SelObj, editPosition, dataset
         
     def HideSomaLabels(self,state=None,silent=0):
@@ -11682,9 +11733,9 @@ class ARIADNE(QtGui.QMainWindow):
         writer.SetInput(allData);
         writer.Write();
 
-    def LoadXMLFile(self,filename):
+    def LoadXMLFile(self,origfilename):
         reader=vtk.vtkXMLMultiBlockDataReader()
-        reader.SetFileName(filename)
+        reader.SetFileName(origfilename)
         reader.Update()
         allData=reader.GetOutput()
                 
@@ -11860,6 +11911,8 @@ class ARIADNE(QtGui.QMainWindow):
         print "timerOffset after: ", timerOffset
         
         print "total number of nodes: {0}".format(totNNodes)
+        for neuronId, neuron_obj in Neurons.iteritems():
+            neuron_obj.filename=origfilename
         return Neurons, SelObj, None, None
         
     def get_autocolor(self,ineuron):
@@ -11978,7 +12031,9 @@ class ARIADNE(QtGui.QMainWindow):
 
             if not (not (self.job._Dataset)):                
                 dataset=self.job._Dataset
-
+        for neuronId, neuron_obj in Neurons.iteritems():
+            neuron_obj.filename=origfilename
+            
         if os.path.isdir(tempdir):
             shutil.rmtree(tempdir)
         return Neurons, SelObj, editPosition, dataset
@@ -12067,7 +12122,7 @@ class ARIADNE(QtGui.QMainWindow):
             blockpath,ext=  os.path.splitext(unicode(filename))      
             if not os.path.isdir(blockpath):
                 os.makedirs(blockpath)        
-            
+        NodeID=None    
         for neuronId, neuron_obj in Neurons.iteritems():
             if not neuron_obj:
                 continue
@@ -12196,11 +12251,12 @@ class ARIADNE(QtGui.QMainWindow):
                     'z':unicode(editPosition[2])})
                 
             if (activeNode==None or activeNode<0):
-                if self.QRWin.SelObj[0]==objtype and self.QRWin.SelObj[1]==neuronId and not self.QRWin.SelObj[2]==None:
-                    NodeID.ClearLookup()
-                    nodeIdx=NodeID.LookupValue(self.QRWin.SelObj[2])
-                    if nodeIdx>0:
-                        activeNode=self.QRWin.SelObj[2]
+                if self.QRWin.SelObj[0]==objtype and self.QRWin.SelObj[1]==neuronId \
+                    and not self.QRWin.SelObj[2]==None and not NodeID==None:
+                        NodeID.ClearLookup()
+                        nodeIdx=NodeID.LookupValue(self.QRWin.SelObj[2])
+                        if nodeIdx>0:
+                            activeNode=self.QRWin.SelObj[2]
             if not (activeNode==None or activeNode<0):
                 lxmlET.SubElement(parameters,'activeNode',{'id':unicode(activeNode)})
 
@@ -12503,7 +12559,7 @@ class ARIADNE(QtGui.QMainWindow):
                     print "Error: Could not load file ", filename
                 continue;
 
-        start2=time.time()
+#        start2=time.time()
 #        results= ddobj.pool.map(parParseNML,root.items())
 #        for newSkelCube in results:
 #            ddobj.LoadedCubes.update(newSkelCube)
@@ -12677,8 +12733,10 @@ class ARIADNE(QtGui.QMainWindow):
 
         for fileobj in filelist:
             archive=None;
+            origfilename=None;
             if fileobj.__class__.__name__=='str' or fileobj.__class__.__name__=='unicode':
                 filename=fileobj;
+                origfilename=filename;
                 loadingmode='loadfromfile';
             elif fileobj.__class__.__name__=='list':
                 try:                
@@ -12843,7 +12901,9 @@ class ARIADNE(QtGui.QMainWindow):
                     Neurons[neuronId]=parent_obj
                     parentData=OrderedDict()
                     tempData[neuronId]=parentData
-
+                
+                if not (not origfilename):
+                    parent_obj.filename=origfilename
                 
                 if objtype in parent_obj.children:
                     obj=parent_obj.children[objtype]
@@ -12983,9 +13043,9 @@ class ARIADNE(QtGui.QMainWindow):
         self.Timer.timerOffset=timerOffset;
         return Neurons, SelObj, editPosition, dataset
 
-    def LoadSkeletonFile(self,filename):
-        Data = scipy.io.loadmat(filename,struct_as_record=False, squeeze_me=True)
-#        tempData=scipy.io.loadmat(filename,squeeze_me=True, chars_as_strings=False, mat_dtype=True, struct_as_record=False)
+    def LoadSkeletonFile(self,origfilename):
+        Data = scipy.io.loadmat(origfilename,struct_as_record=False, squeeze_me=True)
+#        tempData=scipy.io.loadmat(origfilename,squeeze_me=True, chars_as_strings=False, mat_dtype=True, struct_as_record=False)
         if Data.has_key('Neuron'):
             Data=Data['Neuron']
         elif Data.has_key('ConsTree'):
@@ -12995,7 +13055,7 @@ class ARIADNE(QtGui.QMainWindow):
         if Data.__class__.__name__=='mat_struct':
             Data=np.array([Data]);
         if not hasattr(Data,'size'):
-            print filename, 'seems to be an invalid matlab skeleton.' 
+            print origfilename, 'seems to be an invalid matlab skeleton.' 
             return None, None, None, None
         Neurons=OrderedDict()
         timerOffset=self.Timer.timerOffset
@@ -13181,6 +13241,9 @@ class ARIADNE(QtGui.QMainWindow):
                     child.add_branch(tempBranch)
             Neurons[NeuronID].children["skeleton"]=child
         self.Timer.timerOffset=timerOffset
+
+        for neuronId, neuron_obj in Neurons.iteritems():
+            neuron_obj.filename=origfilename
 
         return Neurons, None, None, dataset
 
@@ -14342,10 +14405,10 @@ if __name__ == "__main__":
     window1.SetSynLineWidth()
 
     window1.ChangeSkelVisMode()
-    if not (not window1.job):
-        window1.ChangeColorScheme(0)
-    else:                    
-        window1.ChangeColorScheme()
+#    if not (not window1.job):
+#        window1.ChangeColorScheme(0)
+#    else:                    
+#        window1.ChangeColorScheme()
     window1.ChangeNeuronVisMode()
     window1.ChangePlaneVisMode()
     window1.ChangeBorderVisMode()
