@@ -224,6 +224,8 @@ if sys.platform.startswith('win'):
     win=1
 else:
     win=0
+    
+print "application path: " + application_path
 
 if win:
     print application_path;
