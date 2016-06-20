@@ -3085,7 +3085,9 @@ class QRenWin(QtGui.QWidget):
             cellCenters.Update()
             FaceCenters=cellCenters.GetOutput()
             if not (not FaceCenters):
-                FaceCenterPoints=FaceCenters.GetPoints().GetData()
+                FaceCenterPoints=FaceCenters.GetPoints()
+                if not (not FaceCenterPoints):
+                    FaceCenterPoints=FaceCenterPoints.GetData()
                 if not (not FaceCenterPoints):
                     Point=np.mean(vtk_to_numpy(FaceCenterPoints),0)
         elif ObjType=="skeleton":
@@ -11204,6 +11206,7 @@ class ARIADNE(QtGui.QMainWindow):
             CurrentPath=""
         
         selectedFilter=QtCore.QString();
+        tempFileFormats=['PyKnossos (*.nmx)']
         if self.comboBox_AutoSave.currentIndex()==2:
             tempFileFormats=['KNOSSOS (*.nml)']
         elif self.comboBox_AutoSave.currentIndex()==3:
@@ -13074,7 +13077,23 @@ class ARIADNE(QtGui.QMainWindow):
                 
             if hasattr(tempData.Attributes, 'color'):
                 #might want to validate input
+                a=r=g=b=None
                 color=tempData.Attributes.color
+                if hasattr(color,'r'):
+                    r=np.float(color.r)
+                if hasattr(color,'g'):
+                    g=np.float(color.g)
+                if hasattr(color,'b'):
+                    b=np.float(color.b)
+                if hasattr(color,'a'):
+                    a=np.float(color.a)
+                if r==None or b==None or g==None:
+                    color=self.get_autocolor(ineuron)
+                else:
+                    if a==None:
+                        a=1.0
+                    color=(r,g,b,a)
+                    print "Loaded MATLAB color:", color
             else:
 #                ineuron=self.Neurons.__len__()
                 color=self.get_autocolor(ineuron)
