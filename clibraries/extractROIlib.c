@@ -48,7 +48,7 @@ unsigned char* find_cubeinplane(unsigned int x,unsigned int y,unsigned int z){
 			pos=(int)(*(MagOffset[Mag]+cubepos));
 		}
 	}
-	if (pos==-2){
+	if (pos<=-2){
 		//printf( "************Cube not found*************\n");
 		return invalidCube;
 	}

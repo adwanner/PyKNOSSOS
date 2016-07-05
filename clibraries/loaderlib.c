@@ -1,12 +1,30 @@
-/*gcc -I/usr/include/libpng12 loaderlib.c readpng.c -O3 -fPIC -shared -o clibraries/loaderlib.so*/
+/*gcc -I/usr/include/libpng12 loaderlib.c readpng.c -lcurl -O3 -fPIC -shared -o clibraries/loaderlib.so*/
 
-//FMI: /*i586-mingw32msvc-gcc -I/usr/local/i586-mingw32msvc/include -L/usr/local/i586-mingw32msvc/lib loaderlib.c readpng.c -O3 -shared -o clibraries/loaderlib.dll -lpng -lz*/
-//wannerad: /*i586-mingw32msvc-gcc -I/usr/local/i586-mingw32msvc/include -I/usr/include/libpng12 -I/usr/lib/syslinux/com32/include -L/usr/local/i586-mingw32msvc/lib loaderlib.c readpng.c -O3 -shared -o clibraries/loaderlib.dll -lpng -lz*/
+//FMI: /*i586-mingw32msvc-gcc -I/usr/local/i586-mingw32msvc/include -L/usr/local/i586-mingw32msvc/lib loaderlib.c readpng.c -O3 -shared -o clibraries/loaderlib.dll -lcurl -lpng -lz*/
+//i586-mingw32msvc-gcc -O3 -shared -o clibraries/loaderlib.dll -DCURL_STATICLIB loaderlib.c readpng.c streamcube.h -lpthreadGC2 -lpng -lz -ljpeg -lcurl -lwldap32 -lz -lws2_32
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include "readpng.h"
+#include <pthread.h>
+#include "streamcube.h" //has to be before jpeglib.h, otherwise conflict for INT32
+#include <setjmp.h>
+#include <jpeglib.h>
+
+struct CubeIdentifier {
+int flag;
+int CubeID;
+int mag;
+int x;
+int y;
+int z;
+};
+
+int NThreads=5;
+struct CubeIdentifier *Cube2Stream;
+pthread_t *ThreadID;
+int *validThreads;
 
 int initialized=0;
 
@@ -20,12 +38,15 @@ int *ForceLoading;
 int *Mag, *NMag, NMags2Load=3;
 unsigned int *LoadingStrategy;
 
-const char *BasePath, *BaseName;
+const char *BasePath, *BaseName, *BaseExt, *BaseURL, *UserName, *Password;
 char *CubeFileName;
-size_t BasePathLength, BaseNameLength;
+size_t BasePathLength, BaseNameLength, BaseExtLength;
 
 unsigned int *Cubes2Load;
-int NCubes2Load;
+
+int *NCubes2Load;
+int Cubes2LoadIdx;
+int *OfflineMode;
 
 int *NumberofCubes;
 short int **CubeIDsInCache;
@@ -37,10 +58,93 @@ unsigned int NPriorities=3+3+1;
 unsigned int Priority[3+3+1]; 
 unsigned int cachepos;
 
-unsigned int LoadingMode=0;
+unsigned int LoadingMode=0, ServerFormat;
 
 float *Dist2Center;
 
+struct my_error_mgr {
+  struct jpeg_error_mgr pub;	/* "public" fields */
+
+  jmp_buf setjmp_buffer;	/* for return to caller */
+};
+typedef struct my_error_mgr * my_error_ptr;
+
+METHODDEF(void)
+my_error_exit (j_common_ptr cinfo)
+{
+  printf("JPGERROR\n");
+  /* cinfo->err really points to a my_error_mgr struct, so coerce pointer */
+  my_error_ptr myerr = (my_error_ptr) cinfo->err;
+
+  /* Always display the message. */
+  /* We could postpone this until after returning, if we chose. */
+  (*cinfo->err->output_message) (cinfo);
+
+  /* Return control to the setjmp point */
+  longjmp(myerr->setjmp_buffer, 1);
+}
+
+static void *pull_cube(void* userp){
+
+	/*printf("Another thread was initialized");
+	int i, res;
+	for (i=0;i<100000;i++){
+		res=res*res;
+		res=res/i;
+	}
+	printf("Another thread gets closed.");	
+	return NULL;*/
+	struct CubeIdentifier *Cube2Stream = (struct CubeIdentifier *)userp;
+	struct MemoryStruct CubeStream;
+	int streamstate=0;
+	unsigned int icube=0,found=0;
+
+	CubeStream.memory = malloc(1);/* will be grown as needed by the realloc above */
+	CubeStream.size = 0;/* no data at this point */
+	InitStream((void *)&CubeStream);
+	while (Cube2Stream->flag>=0){
+		if (Cube2Stream->flag==0){
+			usleep(50*1000);
+		}
+		else{
+			CubeStream.memory = malloc(1);/* will be grown as needed by the realloc above */
+			CubeStream.size = 0;/* no data at this point */
+			streamstate=0;
+
+			for (icube=1;icube<NCubes;icube=icube+5){
+				if (*(Cubes2Load+icube)==Cube2Stream->CubeID){
+					found=1;
+					break;
+				}
+			};
+			//printf("found: %d, cube2load: %d, cube2stream: %d\n",found,*(Cubes2Load+icube),Cube2Stream->CubeID);
+			//if (*OfflineMode==1){printf("Working offline.\n");}
+			if ((ServerFormat>0) && (BaseURL!=NULL) && (found==1) && (*OfflineMode==0)){
+				streamstate=StreamCube((void *)&CubeStream,ServerFormat,BaseURL,BaseName,BaseExt,UserName,Password,Cube2Stream->mag,Cube2Stream->x,Cube2Stream->y,Cube2Stream->z);
+				if (streamstate==1){
+					WriteCube( (void *)&CubeStream,BasePath,BaseName,BaseExt,Cube2Stream->mag,Cube2Stream->x,Cube2Stream->y,Cube2Stream->z);
+					*(MagOffset[Cube2Stream->mag-1]+Cube2Stream->CubeID)=(short int)-1;
+				}
+				else if (streamstate==2){ //time out
+					*(MagOffset[Cube2Stream->mag-1]+Cube2Stream->CubeID)=(short int)-1;
+				}
+				else{
+					*(MagOffset[Cube2Stream->mag-1]+Cube2Stream->CubeID)=(short int)-2;	
+				};
+				//printf("streamstate: %d, CubeStream.size: %lu, %p\n",streamstate,(long)CubeStream.size,&CubeStream.memory);
+			}
+			else{
+				*(MagOffset[Cube2Stream->mag-1]+Cube2Stream->CubeID)=(short int)-1;
+			};
+			Cube2Stream->flag=0;
+		};
+	}
+	if (CubeStream.curl_handle!=NULL){
+		curl_easy_cleanup(CubeStream.curl_handle);
+	}
+	free(CubeStream.memory);
+	return NULL;
+}
 
 
 #define CubeID(mag,x0,y0,z0) (x0+NumberofCubes[(mag-1)*3]*(y0+NumberofCubes[(mag-1)*3+1]*z0))
@@ -265,11 +369,20 @@ int LoadCubesFromList(unsigned int icube, unsigned int icubeEnd){
 	unsigned char *CachePosition;
 	unsigned int cubeID, mag, imag;
 	unsigned int x, y, z;
+	
 
 	unsigned long image_width, image_height;
 	int image_channels;
 	short int** CubeIDcachepos;
 
+	int error;
+
+	struct jpeg_decompress_struct cinfo;
+	struct my_error_mgr jerr;
+	/* More stuff */
+	JSAMPARRAY buffer;		/* Output row buffer */
+	int row_stride;		/* physical row width in output buffer */
+	
 	while(icube<icubeEnd){
 		while (cachepos<NCubes){	
 			if (*(Cubes2Keep+cachepos)){
@@ -297,36 +410,51 @@ int LoadCubesFromList(unsigned int icube, unsigned int icubeEnd){
 		}
 		
 		mag=*(Cubes2Load+icube++);		
-		cubeID=*(Cubes2Load+icube++);		
+		cubeID=*(Cubes2Load+icube++);	
 		if (*(MagOffset[mag-1]+cubeID)==(short int)-2){
+			//printf("Cube (mag=%u,x=%u,y=%u,z=%u) is non-existing\n",mag,x,y,z);
+			icube+=3;
+			(*NCubes2Load)--;
+			continue;
+		}
+		else if (*(MagOffset[mag-1]+cubeID)==(short int)-3){
 			//printf("Cube (mag=%u,x=%u,y=%u,z=%u) is non-existing\n",mag,x,y,z);
 			icube+=3;
 			continue;
 		}
+		else if (*(MagOffset[mag-1]+cubeID)>(short int)-1){
+			//printf("Cube (mag=%u,x=%u,y=%u,z=%u) has already been loaded\n",mag,x,y,z);
+			icube+=3;
+			continue;
+		}
+
 		x=*(Cubes2Load+icube++);
 		y=*(Cubes2Load+icube++);
-		z=*(Cubes2Load+icube++);		
-
-		sprintf(CubeFileName,"%s/mag%u/x%04u/y%04u/z%04u/%s_mag%u_x%04u_y%04u_z%04u.raw",\
-			BasePath,mag,x,y,z,BaseName,mag,x,y,z);
+		z=*(Cubes2Load+icube++);
+		sprintf(CubeFileName,"%s/mag%u/x%04u/y%04u/z%04u/%s_mag%u_x%04u_y%04u_z%04u%s",\
+			BasePath,mag,x,y,z,BaseName,mag,x,y,z,BaseExt);
 
  		//printf("Cube (mag=%u,x=%u,y=%u,z=%u) is in cache at: %u\n",mag,x,y,z,cachepos);
 		fid = fopen (CubeFileName,"rb");
+		error=0;
 		if (fid!=NULL){
 			/*printf("Loading cube: %s\n",CubeFileName);*/
 			switch (LoadingMode){
 				case 0:/*Raw image cubes*/
 					bytes_read=fread(CachePosition,sizeof(unsigned char),2097152,fid);
 					if (bytes_read != 2097152) {
+						error=1;
 						printf("Read %zu bytes. Reading error for: %s\n",bytes_read,CubeFileName);
 					}
 					break;
 				case 1:/*png image cubes, slices aranged from left to right*/
 					if (readpng_init(fid, &image_width, &image_height) != 0) {
+						error=1;
 						printf("Error: Invalid PNG file: %s\n",CubeFileName);
 					}
 					else{
 						if (image_width*image_height!=2097152){
+							error=1;
 							printf("Error: Invalid PNG image size: %s\n",CubeFileName);
 						}
 						else{
@@ -337,10 +465,12 @@ int LoadCubesFromList(unsigned int icube, unsigned int icubeEnd){
 					break;
 				case 2:/*png image cubes, slices aranged in rows*/
 					if (readpng_init(fid, &image_width, &image_height) != 0) {
+						error=1;							
 						printf("Error: Invalid PNG file: %s\n",CubeFileName);
 					}
 					else{
 						if (image_width*image_height!=2097152){
+							error=1;
 							printf("Error: Invalid PNG image size: %s\n",CubeFileName);
 						}
 						else{
@@ -349,16 +479,139 @@ int LoadCubesFromList(unsigned int icube, unsigned int icubeEnd){
 						}
 					}					    
 					break;
+				case 3:/*jpg image cubes, slices aranged in rows*/
+					/* This struct contains the JPEG decompression parameters and pointers to
+					* working space (which is allocated as needed by the JPEG library).
+					*/
+					/* Step 1: allocate and initialize JPEG decompression object */
+					/* We set up the normal JPEG error routines, then override error_exit. */
+					cinfo.err = jpeg_std_error(&jerr.pub);
+					jerr.pub.error_exit = my_error_exit;
+
+					if (setjmp(jerr.setjmp_buffer)) {
+					  /* If we get here, the JPEG code has signaled an error.
+					   * We need to clean up the JPEG object, close the input file, and return.
+					   */
+					  jpeg_destroy_decompress(&cinfo);
+					  error=1;
+					  printf("Error: Invalid JPG file: %s\n",CubeFileName);
+					  break;
+					}
+					/* Now we can initialize the JPEG decompression object. */
+			    		jpeg_create_decompress(&cinfo);
+
+					/* Step 2: specify data source (eg, a file) */
+					jpeg_stdio_src(&cinfo, fid);
+
+					/* Step 3: read file parameters with jpeg_read_header() */
+					(void) jpeg_read_header(&cinfo, TRUE);
+					/* We can ignore the return value from jpeg_read_header since
+					 *   (a) suspension is not possible with the stdio data source, and
+					 *   (b) we passed TRUE to reject a tables-only JPEG file as an error.
+					 * See libjpeg.doc for more info.
+					*/
+					/* Step 5: Start decompressor */
+					(void) jpeg_start_decompress(&cinfo);
+
+					if (cinfo.output_width*cinfo.output_height!=2097152){
+						error=1;
+						printf("Error: Invalid JPG image size: %s, size: %i\n",CubeFileName,cinfo.output_width*cinfo.output_height);
+						jpeg_destroy_decompress(&cinfo);
+						break;
+					};
+					if ((cinfo.output_components>1) | (cinfo.jpeg_color_space != JCS_GRAYSCALE)){
+						error=1;
+						printf("Error: Not a grayscale JPG image: %s\n",CubeFileName);
+						jpeg_destroy_decompress(&cinfo);
+						break;
+					};
+
+					/* JSAMPLEs per row in output buffer */
+					row_stride = cinfo.output_width * cinfo.output_components;
+				  	/*printf("row_stride: %i\n",row_stride);
+					printf("cinfo.output_height: %i\n",cinfo.output_height);*/
+
+					/* Step 6: while (scan lines remain to be read) */
+					/*           jpeg_read_scanlines(...); */
+
+					/* Here we use the library's state variable cinfo.output_scanline as the
+					 * loop counter, so that we don't have to keep track ourselves.
+					*/
+					buffer = (*cinfo.mem->alloc_sarray)((j_common_ptr) &cinfo, JPOOL_IMAGE, row_stride, 1);
+					while (cinfo.output_scanline < cinfo.output_height) {
+					  /* jpeg_read_scanlines expects an array of pointers to scanlines.
+					   * Here the array is only one element long, but you could ask for
+					   * more than one scanline at a time if that's more convenient.
+					   */
+					  /*printf("irow: %i\n",cinfo.output_scanline);*/
+
+					  
+					  (void) jpeg_read_scanlines(&cinfo,buffer, 1);
+					  //printf("%lu\n",(long)cinfo.output_scanline);
+
+					  memcpy(CachePosition+(cinfo.output_scanline-1)*row_stride,buffer[0],row_stride);
+					}
+
+					/* Step 7: Finish decompression */
+					if (cinfo.mem!=NULL){
+						(void) jpeg_finish_decompress(&cinfo);
+					}
+					/* We can ignore the return value since suspension is not possible
+					* with the stdio data source.
+					*/
+
+					/* Step 8: Release JPEG decompression object */
+
+					/* This is an important step since it will release a good deal of memory. */
+					
+					jpeg_destroy_decompress(&cinfo);
+										    
+					break;
 			}
+		}
+		else{
+			error=1;
+		};
+		if (fid!=NULL){
 	  		fclose(fid);
-			*CubeIDcachepos=(short int*)(MagOffset[mag-1]+cubeID);
+		}
+		if (error==0){
+	  		*CubeIDcachepos=(short int*)(MagOffset[mag-1]+cubeID);
 			**CubeIDcachepos=(short int)cachepos;
 			//printf("Load cube (mag=%u,x=%u,y=%u,z=%u) into cache at pos %u\n",mag,x,y,z,cachepos);
 			cachepos++;
+			(*NCubes2Load)--;
 		}
 		else{
-			//printf("Cube not found: %s\n",CubeFileName);
-			*(MagOffset[mag-1]+cubeID)=(short int)-2;
+			if ((ServerFormat>0) && (BaseURL!=NULL) && ((*(MagOffset[mag-1]+cubeID))!=-3)){
+				int found=0, ithread;
+				for (ithread=0;ithread<NThreads;ithread++){
+					if ((Cube2Stream[ithread].flag==0) && (validThreads[ithread]==1)){
+						//printf("Thread slot found: %d\n",ithread);
+						found=1;
+						break;
+					}					
+				}
+				if (found==0){
+					/*printf("No thread slot found. \n");*/
+				}
+				else{			
+					*(MagOffset[mag-1]+cubeID)=-3;
+					
+					Cube2Stream[ithread].CubeID=cubeID;
+					Cube2Stream[ithread].mag=mag;
+					Cube2Stream[ithread].x=x;
+					Cube2Stream[ithread].y=y;
+					Cube2Stream[ithread].z=z;
+					Cube2Stream[ithread].flag=1;
+
+				}
+			}
+			else{
+				printf("Cube not found: %s\n",CubeFileName);
+				*(MagOffset[mag-1]+cubeID)=(short int)-2;
+				(*NCubes2Load)--;
+			};
 			//printf("Cube %u (mag=%u,x=%u,y=%u,z=%u) is non-existing\n",mag,x,y,z);
 		}
 	}
@@ -420,8 +673,9 @@ int load_cubes(){
 	//First check which cubes have to be loaded and which are already in cache
 	//reset memory
 	memset(Cubes2Keep,(unsigned char)0,NCubes);
-	NCubes2Load=0;
+	Cubes2LoadIdx=0;
 	icube=0;
+	*NCubes2Load=0;
 	while (icube<4*NCubes){
 		imag=LoadingStrategy[icube++];
 		if (whichMag[imag]==0){
@@ -449,19 +703,19 @@ int load_cubes(){
 			*(Cubes2Keep+pos)=(unsigned char)1;
 			continue;
 		}
-
-		*(Cubes2Load+NCubes2Load++)=whichMag[imag];
-		*(Cubes2Load+NCubes2Load++)=cubeID;
-		*(Cubes2Load+NCubes2Load++)=(unsigned int)x;
-		*(Cubes2Load+NCubes2Load++)=(unsigned int)y;
-		*(Cubes2Load+NCubes2Load++)=(unsigned int)z;
+		(*NCubes2Load)++;
+		*(Cubes2Load+Cubes2LoadIdx++)=whichMag[imag];
+		*(Cubes2Load+Cubes2LoadIdx++)=cubeID;
+		*(Cubes2Load+Cubes2LoadIdx++)=(unsigned int)x;
+		*(Cubes2Load+Cubes2LoadIdx++)=(unsigned int)y;
+		*(Cubes2Load+Cubes2LoadIdx++)=(unsigned int)z;
 	}
 
-	//printf("Number of cubes to load: %u\n",NCubes2Load);
+	//printf("Number of cubes to load: %u\n",Cubes2LoadIdx);
 	cachepos=0;
 	icube=0; 
 	halfEdge=(unsigned int)ceil(((float)(NCubesPerEdge[0]))/2.0)-1;
-	while (icube<NCubes2Load){
+	while (icube<Cubes2LoadIdx){
 		if (*ForceLoading==0){
 			return CompletedLoading;
 		}	
@@ -477,11 +731,22 @@ int load_cubes(){
 				return CompletedLoading;
 			}
 		}
-		icubeEnd=icube+500; //5*100
-		if (icubeEnd>NCubes2Load){
-			icubeEnd=NCubes2Load;
+		if ((ServerFormat>0) && (BaseURL!=NULL)){
+			icubeEnd=icube+500; //5*100
+			//icubeEnd=icube+NThreads;			
 		}
-		LoadCubesFromList(icube,icubeEnd);
+		else{
+			icubeEnd=icube+500; //5*100
+		};
+		if (icubeEnd>Cubes2LoadIdx){
+			icubeEnd=Cubes2LoadIdx;
+		}
+		if ((ServerFormat>0) && (BaseURL!=NULL)){
+			LoadCubesFromList(0,icubeEnd);
+		}
+		else{
+			LoadCubesFromList(icube,icubeEnd);
+		};
 		icube=icubeEnd;
 	}
 
@@ -496,11 +761,27 @@ int release_loader(void){
 		return 1;
 	}
 	printf("Release Loader memory...");
+	if ((ServerFormat>0) && (BaseURL!=NULL)){
+		int error, ithread;
+		for(ithread=0; ithread< NThreads; ithread++) {
+			Cube2Stream[ithread].flag=-1;
+			pthread_detach(ThreadID[ithread]);
+			validThreads[ithread]=0;
+			/*if (ThreadID[ithread]!=0){
+				error = pthread_join(ThreadID[ithread], NULL);
+				fprintf(stderr, "Thread %d terminated\n",ithread);
+			};*/
+		};
+		/* this function releases resources acquired by curl_global_init() */
+		curl_global_cleanup();
+	};
 	free(CubeIDsInCache);
 	int imag;
 	for (imag=0;imag<*NMag;imag++){
 		MagOffset[imag]=NULL;
 	}
+
+
 	free(MagOffset);
 	free(CubeFileName);
 	free(LoadingStrategy);
@@ -514,18 +795,26 @@ int release_loader(void){
 	NCubesPerEdge=NULL;
 	BasePath=NULL;
 	BaseName=NULL;
+	BaseExt=NULL;
 	NMag=NULL;
 	DataScale=NULL;
 	NCubesPerEdge=NULL;
 	NumberofCubes=NULL;
 	Mag=NULL;
+
+	BaseURL=NULL;
+	UserName=NULL;
+	Password=NULL;
+
 	ForceLoading=NULL;
 	initialized=0;
 	return 1;
 }
 
-int init_loader(float* currCoord,unsigned char* hyperCube0,unsigned char* hyperCube1,unsigned char* hyperCube2,short int* allCubes,int* nCubesPerEdge,const char* basePath,const char* baseName,int* nMag, float* dataScale,int* numberofCubes,int* magnification,int* loadingMode, int* forceLoading){
-  int idim,imag, pos;
+int init_loader(float* currCoord,unsigned char* hyperCube0,unsigned char* hyperCube1,unsigned char* hyperCube2,short int* allCubes,int* nCubesPerEdge,const char* basePath,const char* baseName,char* baseExt, int* nMag, float* dataScale,int* numberofCubes,int* magnification,int* loadingMode,
+const char* baseURL,const char* userName,const char* password, int* serverFormat,int*nThreads, int* offlineMode, int* nCubes2Load, int* forceLoading){
+
+  int idim,imag, pos, ithread, error;
 	if (initialized==1){
 		release_loader();
 	}
@@ -534,12 +823,36 @@ int init_loader(float* currCoord,unsigned char* hyperCube0,unsigned char* hyperC
 	NCubesPerEdge=nCubesPerEdge;
 	BasePath=basePath;
 	BaseName=baseName;
+	BaseExt=baseExt;
 	NMag=nMag;
 	DataScale=dataScale;
 	CurrCoord=currCoord;
 	NumberofCubes=numberofCubes;
 	Mag=(int *)magnification;
+
+	BaseURL=baseURL;
+	UserName=userName;
+	Password=password;
+	ServerFormat=(unsigned int) *serverFormat;
+	NThreads=(int) (*nThreads);
+	OfflineMode=offlineMode;
+
+	NCubes2Load=nCubes2Load;
+
+
+	if ((ServerFormat>0) && (BaseURL!=NULL)){
+		curl_global_init(CURL_GLOBAL_ALL);
+	};
+
+	ThreadID=(pthread_t*)calloc(NThreads,sizeof(pthread_t));
+	if (ThreadID==NULL){printf("Could not allocate memory for ThreadID.\n");return -1;}
+
+	validThreads=(int*)calloc(NThreads,sizeof(int)); 
+	if (validThreads==NULL){printf("Could not allocate memory for validThreads.\n");return -1;}
 	
+	Cube2Stream=(struct CubeIdentifier*)calloc(NThreads,sizeof(struct CubeIdentifier)); 
+	if (Cube2Stream==NULL){printf("Could not allocate memory for Cube2Stream.\n");return -1;}
+
 	ForceLoading=forceLoading;
 
 	LoadingMode=(unsigned int) *loadingMode;
@@ -547,6 +860,7 @@ int init_loader(float* currCoord,unsigned char* hyperCube0,unsigned char* hyperC
 	printf("BasePath: %s, BaseName: %s\n",BasePath,BaseName);
 	printf("CubeSize: (%i,%i,%i), NCubesPerEdge: (%i,%i,%i), currCoord: (%f,%f,%f)\n",128,128,128,\
 		NCubesPerEdge[0],NCubesPerEdge[1],NCubesPerEdge[2],currCoord[0],currCoord[1],currCoord[2]);
+
 	
 	for (imag=0;imag<*NMag;imag++){
 		printf("DataScale mag%i: (%f,%f,%f)\n",imag+1,DataScale[imag*3+0],DataScale[imag*3+1],DataScale[imag*3+2]);
@@ -577,8 +891,9 @@ int init_loader(float* currCoord,unsigned char* hyperCube0,unsigned char* hyperC
 	
 	BasePathLength=strlen(BasePath);
 	BaseNameLength=strlen(BaseName);
+	BaseExtLength=strlen(BaseExt);
 
-	CubeFileName=(char *)calloc((BasePathLength+5+2+4+2+4+2+4+1+BaseNameLength+5+2+4+2+4+2+4+4+1),sizeof(char));
+	CubeFileName=(char *)calloc((BasePathLength+5+2+4+2+4+2+4+1+BaseNameLength+5+2+4+2+4+2+4+BaseExtLength+1),sizeof(char));
 	if (CubeFileName==NULL){printf("Could not allocate memory for CubeFileName.\n");return -1;}
 
 	HyperCube[0]=hyperCube0;
@@ -606,8 +921,22 @@ int init_loader(float* currCoord,unsigned char* hyperCube0,unsigned char* hyperC
 	prevCoord[1]=-1000;
 	prevCoord[2]=-1000;
 	PrevMag=1000;
-
+	if ((ServerFormat>0) && (BaseURL!=NULL)){
+		printf("Start streamer with %d channels\n",NThreads);
+		for (ithread=0;ithread<NThreads;ithread++){	
+			Cube2Stream[ithread].flag=0;
+			error = pthread_create(&ThreadID[ithread],NULL,pull_cube,(void *)&Cube2Stream[ithread]);
+			if(0 != error){
+				fprintf(stderr, "Couldn't run thread error no %d\n", error);
+				validThreads[ithread]=0;
+			}
+			else{
+				validThreads[ithread]=1;
+			}
+		};
+	};
 	GenerateLoadingStrategy2();
+
 	initialized=1;
 	return 1;
 }

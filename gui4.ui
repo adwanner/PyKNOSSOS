@@ -1451,6 +1451,75 @@
           </widget>
          </widget>
         </widget>
+        <widget class="QWidget" name="LoaderTab">
+         <attribute name="title">
+          <string>Loader</string>
+         </attribute>
+         <widget class="QSpinBox" name="SpinBox_CubesPerEdge">
+          <property name="geometry">
+           <rect>
+            <x>130</x>
+            <y>10</y>
+            <width>71</width>
+            <height>22</height>
+           </rect>
+          </property>
+          <property name="minimum">
+           <number>1</number>
+          </property>
+          <property name="maximum">
+           <number>20</number>
+          </property>
+          <property name="value">
+           <number>5</number>
+          </property>
+         </widget>
+         <widget class="QLabel" name="label_62">
+          <property name="geometry">
+           <rect>
+            <x>10</x>
+            <y>10</y>
+            <width>111</width>
+            <height>22</height>
+           </rect>
+          </property>
+          <property name="text">
+           <string>Cubes per edge:</string>
+          </property>
+         </widget>
+         <widget class="QSpinBox" name="SpinBox_StreamingSlots">
+          <property name="geometry">
+           <rect>
+            <x>130</x>
+            <y>40</y>
+            <width>71</width>
+            <height>22</height>
+           </rect>
+          </property>
+          <property name="minimum">
+           <number>1</number>
+          </property>
+          <property name="maximum">
+           <number>1000</number>
+          </property>
+          <property name="value">
+           <number>5</number>
+          </property>
+         </widget>
+         <widget class="QLabel" name="label_63">
+          <property name="geometry">
+           <rect>
+            <x>10</x>
+            <y>40</y>
+            <width>111</width>
+            <height>22</height>
+           </rect>
+          </property>
+          <property name="text">
+           <string>Streaming slots:</string>
+          </property>
+         </widget>
+        </widget>
         <widget class="QWidget" name="ObjBrowserTab">
          <property name="enabled">
           <bool>true</bool>
@@ -2571,9 +2640,20 @@
         </property>
         <addaction name="ActionLoadNewDataset"/>
         <addaction name="ActionSetDefaultDataPath"/>
+        <addaction name="separator"/>
+        <addaction name="ActionWorkingOffline"/>
+       </widget>
+       <widget class="QMenu" name="CubeQueue">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="title">
+         <string>0 cubes in the queue</string>
+        </property>
        </widget>
        <addaction name="File"/>
        <addaction name="menuDataset"/>
+       <addaction name="CubeQueue"/>
       </widget>
      </item>
     </layout>
@@ -4449,6 +4529,22 @@
   <action name="ActionSaveActiveNeuron">
    <property name="text">
     <string>Save active neuron</string>
+   </property>
+  </action>
+  <action name="ActionWorkingOffline">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Working offline</string>
+   </property>
+  </action>
+  <action name="actionCubes_per_edge">
+   <property name="text">
+    <string>cubes per edge</string>
    </property>
   </action>
  </widget>

@@ -12,8 +12,6 @@ mprocess=1 #use seperate process for cube loader (unfortunately not compatible w
 showconsole=0 #show python console #has been tested successfully only for linux
 experimental=1 #show experimental features
 
-NCubesPerEdge=9; #on windows NCubesPerEdge=5;
-
 #your encryption key used for encrypting and decrypting annotation files
 encryptionkey='EncryptPyKnossos';
 #AES key must be either 16, 24, or 32 bytes long
@@ -227,7 +225,11 @@ else:
     
 print "application path: " + application_path
 
+maxNStreamingChannels=50;
 if win:
+    maxNCubesPerEdge=5; #On windows we are limited by 32bit
+    #Note: The number of cubes in memory: NCubesInMemory= 3 * NCubesPerEdge^3
+    #Memory usage: NCubesInMemory*CubeSize^3
     print application_path;
     temp_dir='';
     lib_path=os.path.join(temp_dir,r"loaderlib.dll")
@@ -235,6 +237,9 @@ if win:
     lib_path=os.path.join(temp_dir,r"extractROIlib.dll")
     extractROIlib = cdll.LoadLibrary(lib_path)
 else:
+    maxNCubesPerEdge=9; #No real limit, but 10 is already a lot...
+    #Note: The number of cubes in memory = 3 * NCubesPerEdge^3
+    #Memory usage: NCubesInMemory*CubeSize^3
     loaderlib = cdll.LoadLibrary(os.path.join(application_path, r"clibraries/loaderlib.so"))
     extractROIlib = cdll.LoadLibrary(os.path.join(application_path ,r"clibraries/extractROIlib.so"))
 
@@ -860,10 +865,17 @@ class Dataset:
         self.viewports.remove(viewport)
 
 class Loader:
-    _NCubesPerEdge=(NCubesPerEdge,NCubesPerEdge,NCubesPerEdge)
+    filename=None
+    _NCubesPerEdge=(5,5,5)
+    _NStreamingChannels=5;
     _NumberofCubes=(120,120,120)
     _BaseName=""
+    _BaseExt=".raw"
     _BasePath=""
+    _BaseURL=""
+    _UserName=""
+    _Password=""
+    _ServerFormat=0;
     _DataScale=(1.0,1.0,1.0)
     _FileType=0
     _Extent=[120*128,120*128,120*128]
@@ -877,19 +889,52 @@ class Loader:
         self.multiprocessing=multiprocessing
         self.LoaderProcess=None
         self.LoaderState=RawArray(c_int,[0])
+        self.WorkingOffline=RawArray(c_int,[0])
+        self.NCubes2Load=RawArray(c_int,[0])
         self.ROIState=Value('i',0)
         self.Magnification=RawArray(c_int,[self._Magnification])
         self.Position=RawArray(c_float,(1000.0,1000.0,1000.0))
         self.ShortestEdge=[]
 
     def LoadDatasetInformation(self,filename):
+        NCubesPerEdge=int(window1.SpinBox_CubesPerEdge.value())
+        if NCubesPerEdge>maxNCubesPerEdge:
+            NCubesPerEdge=int(maxNCubesPerEdge);
+            window1.SpinBox_CubesPerEdge.setMaximum(maxNCubesPerEdge)
+            window1.SpinBox_CubesPerEdge.setValue(NCubesPerEdge)
+        if NCubesPerEdge<1:
+            NCubesPerEdge=1;
+            window1.SpinBox_CubesPerEdge.setValue(NCubesPerEdge)
+        self._NCubesPerEdge=(NCubesPerEdge,NCubesPerEdge,NCubesPerEdge)
+        
+        NStreamingChannels=int(window1.SpinBox_StreamingSlots.value())
+        if NStreamingChannels>maxNStreamingChannels:
+            NStreamingChannels=int(maxNStreamingChannels);
+            window1.SpinBox_StreamingSlots.setMaximum(maxNStreamingChannels)
+            window1.SpinBox_StreamingSlots.setValue(NStreamingChannels)
+        if NStreamingChannels<1:
+            NStreamingChannels=1;
+            window1.SpinBox_StreamingSlots.setValue(NStreamingChannels)
+        self._NStreamingChannels=NStreamingChannels
+        
+        if not filename:
+            return None
+        if not os.path.isfile(filename):
+            print "Error: dataset file {0} not found.".format(filename)
+            return None
+        self.filename=filename;
+            
+        self._BaseName=""
+        self._BaseExt=".raw"
+        self._BasePath=""
+        self._BaseURL=""
+        self._UserName=""
+        self._Password=""
+        self._ServerFormat=0;
         self._Extent=[]
         self._Origin=[0.0,0.0,0.0]
         self._NumberofCubes=(120,120,120)
         self._DataScale=(1.0,1.0,1.0)
-        if not os.path.isfile(filename):
-            print "Error: dataset file {0} not found.".format(filename)
-            return None
         DataSetConf=config(filename)        
         DataSetConf.LoadConfig(self,"Dataset")
         self._BasePath=os.path.dirname(filename)
@@ -903,6 +948,10 @@ class Loader:
     def LoadDataset(self):     
         self.StopLoader()
         self.ResetLoader()
+        if self._ServerFormat==0:
+            window1.ActionWorkingOffline.setEnabled(0)
+        else:
+            window1.ActionWorkingOffline.setEnabled(1)
         self.StartLoader()
         
     def CheckMagnification(self,maxROIEdge):   
@@ -977,7 +1026,9 @@ class Loader:
             self.LoaderProcess = multiprocessing.Process(target=self.LoaderLoop, \
                 args=(self.Position,self.LoaderState,self.HyperCube0,self.HyperCube1,self.HyperCube2,self.AllCubes,\
                 self.DataScale,self.NMags,self.Magnification,self.NumberofCubes,\
-                self.BaseName,self.BasePath,self.NCubesPerEdge,self.FileType))
+                self.BaseName,self.BaseExt,self.BasePath,self.NCubesPerEdge,self.FileType,\
+                self.BaseURL,self.UserName,self.Password,self.ServerFormat,\
+                self.NStreamingChannels,self.WorkingOffline,self.NCubes2Load))
             self.LoaderProcess.daemon=True 
             self.LoaderProcess.start()    
             print "Initializing loader process..."
@@ -1002,14 +1053,16 @@ class Loader:
             if self.LoaderState[0]==0:
                 print "Start loader..."            
                 loaderlib.init_loader(self.Position,self.HyperCube0,self.HyperCube1,self.HyperCube2,self.AllCubes,\
-                    self.NCubesPerEdge,self.BasePath,self.BaseName,self.NMags,self.DataScale,self.NumberofCubes,\
-                    self.Magnification,self.FileType,self.LoaderState)
+                    self.NCubesPerEdge,self.BasePath,self.BaseName,self.BaseExt,self.NMags,self.DataScale,self.NumberofCubes,\
+                    self.Magnification,self.FileType,self.BaseURL,self.UserName,self.Password,self.ServerFormat,\
+                    self.NStreamingChannels,self.WorkingOffline,self.NCubes2Load,self.LoaderState)
             self.LoaderState[0]=1
             
         if self.LoaderState[0]>0:
             self.StartROI_Extraction()               
             if window1.QRWin.Timer==None:
                 window1.QRWin.InitTimer()
+                window1.QRWin.InitCubeQueueTimer()
         else:
             print "Error: Could not start loader."
          
@@ -1025,18 +1078,28 @@ class Loader:
         self.ROIState=Value('i',0)
 
         self.NCubesPerEdge=RawArray(c_int,self._NCubesPerEdge[:])
+        self.NStreamingChannels=RawArray(c_int,[self._NStreamingChannels])
 
         if win:
             self.BaseName=RawArray(c_char,str(self._BaseName)+'\x00')
+            self.BaseExt=RawArray(c_char,str(self._BaseExt)+'\x00')
             self.BasePath=RawArray(c_char,str(self._BasePath[:])+'\x00')
+            self.BaseURL=RawArray(c_char,str(self._BaseURL[:])+'\x00')
+            self.UserName=RawArray(c_char,str(self._UserName[:])+'\x00')
+            self.Password=RawArray(c_char,str(self._Password[:])+'\x00')
         else:
             self.BaseName=RawArray(c_char,str(self._BaseName)+'\0')
+            self.BaseExt=RawArray(c_char,str(self._BaseExt)+'\0')
             self.BasePath=RawArray(c_char,str(self._BasePath)+'\0')
+            self.BaseURL= RawArray(c_char,str(self._BaseURL)+'\0')
+            self.UserName=RawArray(c_char,str(self._UserName)+'\0')
+            self.Password=RawArray(c_char,str(self._Password)+'\0')
         
         self.Magnification=RawArray(c_int,[self._Magnification])
         self.DataScale=RawArray(c_float,self._DataScale[:])
         self.NumberofCubes=RawArray(c_int,self._NumberofCubes[:])
         self.FileType=RawArray(c_int,[self._FileType])
+        self.ServerFormat=RawArray(c_int,[self._ServerFormat])
 
         self.ShortestEdge=[]
         NMags=np.int(self._DataScale.__len__()/3.0)
@@ -1081,14 +1144,17 @@ class Loader:
 
     def LoaderLoop(self,Position,LoaderState,HyperCube0,HyperCube1,HyperCube2,\
         AllCubes,DataScale,NMags,Magnification,NumberofCubes,\
-        BaseName,BasePath,NCubesPerEdge,FileType): 
+        BaseName,BaseExt,BasePath,NCubesPerEdge,FileType,BaseURL,UserName,Password,ServerFormat,\
+        NStreamingChannels,WorkingOffline,NCubes2Load): 
 #        for iloop in range(100):
         print "LoaderState: ",  LoaderState[0]
         
         if LoaderState[0]==0:
             print "Start loader..."            
             loaderlib.init_loader(Position,HyperCube0,HyperCube1,HyperCube2,AllCubes,\
-                NCubesPerEdge,BasePath,BaseName,NMags,DataScale,NumberofCubes,Magnification,FileType,LoaderState)
+                NCubesPerEdge,BasePath,BaseName,BaseExt,NMags,DataScale,NumberofCubes,Magnification,\
+                FileType,BaseURL,UserName,Password,ServerFormat,NStreamingChannels,\
+                WorkingOffline,NCubes2Load,LoaderState)
         LoaderState[0]=5
         step=0;
         while LoaderState[0]==5 and step<100:
@@ -1130,10 +1196,12 @@ class Loader:
             return
 
         if self.ROIState.value==0:
-            extractROIlib.init_ROI(self.HyperCube0,self.HyperCube1,self.HyperCube2,self.AllCubes,self.NMags,self.DataScale,self.NCubesPerEdge,self.NumberofCubes)
+            extractROIlib.init_ROI(self.HyperCube0,self.HyperCube1,self.HyperCube2,\
+            self.AllCubes,self.NMags,self.DataScale,self.NCubesPerEdge,self.NumberofCubes)
         elif self.ROIState.value>0:
             extractROIlib.release_ROI(None)   
-            extractROIlib.init_ROI(self.HyperCube0,self.HyperCube1,self.HyperCube2,self.AllCubes,self.NMags,self.DataScale,self.NCubesPerEdge,self.NumberofCubes)
+            extractROIlib.init_ROI(self.HyperCube0,self.HyperCube1,self.HyperCube2,\
+            self.AllCubes,self.NMags,self.DataScale,self.NCubesPerEdge,self.NumberofCubes)
         self.ROIState.value=1
 
 
@@ -2883,6 +2951,13 @@ class QRenWin(QtGui.QWidget):
         self.cellPicker.SetVolumeOpacityIsovalue(0.1)
 
         self.InitTimer()
+        self.InitCubeQueueTimer()
+
+    def InitCubeQueueTimer(self):
+        self.CubeQueueTimer = QtCore.QTimer()
+        self.CubeQueueTimer.timeout.connect(self.UpdateCubeQueue)
+        self.CubeQueueTimer.init_time=None
+        self.CubeQueueTimer.start(200)
         
     def InitTimer(self):
         self.Timer = QtCore.QTimer(self)
@@ -2893,6 +2968,8 @@ class QRenWin(QtGui.QWidget):
         self.Timer.start(1000)
         print "Timer initialized"
         
+    def UpdateCubeQueue(self):
+        self.ariadne.CubeQueue.setTitle("{0} cubes in the queue".format(CubeLoader.NCubes2Load[0]));
         
     def UpdateTimer(self):
 #        print "UpdateTimer"
@@ -8650,6 +8727,7 @@ class ARIADNE(QtGui.QMainWindow):
     DataScale=[9.252,9.252,25]
     _CommentShortcuts=["","","","",""]
     _StartPosition=[]
+    _WorkingOffline=0;
     DemDriFiles={}; #demand-driven files
     
     def __init__(self,uifile):
@@ -8694,7 +8772,6 @@ class ARIADNE(QtGui.QMainWindow):
         self.tempLUT.SetRampToLinear()
         self.tempLUT.SetNumberOfTableValues(NTableValues)
         self.tempLUT.Build()
-
 
         if showconsole:
             ns = {'ariadne': self, 'CubeLoader': CubeLoader,'planeROI': planeROI}#, 'widget': self.centralWidget()}
@@ -8988,6 +9065,12 @@ class ARIADNE(QtGui.QMainWindow):
             iviewport=self.QRWin.viewports["skeleton_viewport"]
             self.BoundingBox.AddBoundingBox(iviewport)
 
+        if self._WorkingOffline==1:
+            self.ActionWorkingOffline.setChecked(1)
+        else:
+            self.ActionWorkingOffline.setChecked(0)
+        self.WorkingOffline()
+
 
     def closeEvent(self, event):
         if not self.Timer.changesSaved:            
@@ -9190,6 +9273,11 @@ class ARIADNE(QtGui.QMainWindow):
         QtCore.QObject.connect(self.SomaAlpha,QtCore.SIGNAL("valueChanged(int)"),self.SetSomaVisibility)                
         QtCore.QObject.connect(self.cbx_HideSomaLabels,QtCore.SIGNAL("stateChanged(int)"),lambda: self.HideSomaLabels())        
         QtCore.QObject.connect(self.SpinBox_LineWidth,QtCore.SIGNAL("editingFinished()"),self.SetSkelLineWidth)        
+
+        QtCore.QObject.connect(self.SpinBox_CubesPerEdge,QtCore.SIGNAL("editingFinished()"),\
+            lambda filename=None, recenter=0: self.ChangeCubeDataset(filename,recenter))        
+        QtCore.QObject.connect(self.SpinBox_StreamingSlots,QtCore.SIGNAL("editingFinished()"),\
+            lambda filename=None, recenter=0: self.ChangeCubeDataset(filename,recenter))      
         
         QtCore.QObject.connect(self.SpinBox_Radius,QtCore.SIGNAL("editingFinished()"),self.SetSkeletonRadius)        
         QtCore.QObject.connect(self.OverwriteRadius,QtCore.SIGNAL("stateChanged(int)"),lambda: self.SetSkeletonRadius())        
@@ -9240,6 +9328,7 @@ class ARIADNE(QtGui.QMainWindow):
         
         QtCore.QObject.connect(self.ActionLoadNewDataset,QtCore.SIGNAL("triggered()"),self.LoadCubeDataset)
         QtCore.QObject.connect(self.ActionSetDefaultDataPath,QtCore.SIGNAL("triggered()"),self.SetDefaultDataPath)
+        QtCore.QObject.connect(self.ActionWorkingOffline,QtCore.SIGNAL("triggered()"),self.WorkingOffline)
         
         
         QtCore.QObject.connect(self._SpinBoxNeuronId,QtCore.SIGNAL("editingFinished()"),
@@ -10573,8 +10662,17 @@ class ARIADNE(QtGui.QMainWindow):
         else:
             datapath=None
         return datapath
-            
-            
+        
+    def WorkingOffline(self):
+        if self.ActionWorkingOffline.isChecked():
+            CubeLoader.WorkingOffline[0]=1;
+            self._WorkingOffline=1;
+        else:
+            CubeLoader.WorkingOffline[0]=0;
+            self._WorkingOffline=0;
+        self.UpdateWindowTitle()
+        
+        
     def LoadCubeDataset(self):
         if os.path.isfile(self.CurrentDataset[1]):
             filelist = QtGui.QFileDialog.getOpenFileNames(self,"Load dataset...",self.CurrentDataset[1],"*.conf");
@@ -10592,9 +10690,12 @@ class ARIADNE(QtGui.QMainWindow):
         if action:
             self.ChangeCubeDataset(action._File)
         
-    def ChangeCubeDataset(self,filename,recenter=1):
+    def ChangeCubeDataset(self,filename=None,recenter=1):
         if not filename:
-            return -1
+            filename=CubeLoader.filename;
+        if not filename:
+            return -1;
+            
         if not CubeLoader.doload:
             print "Loader switched off"
             return 0
@@ -11555,8 +11656,12 @@ class ARIADNE(QtGui.QMainWindow):
             Dataset="None"
         else:
             Dataset=CubeLoader._BaseName
-            
-        Title="{0} - Work mode: {1} - Dataset: {2} - File: {3}".format(PyKNOSSOS_VERSION[0:12],WorkingMode,Dataset,currFile)        
+        
+        if (self._WorkingOffline==1) or (self.ActionWorkingOffline.isEnabled()==0):
+            OnlineMode='offline';
+        else:
+            OnlineMode='online';
+        Title="{0} - Work mode: {1} - Dataset: {2} ({3})- File: {4}".format(PyKNOSSOS_VERSION[0:12],WorkingMode,Dataset,OnlineMode,currFile)        
         self.setWindowTitle(Title)
         
     def TransformOrthViewport(self,obj=None,value=None):
@@ -14397,9 +14502,6 @@ if __name__ == "__main__":
     else:
         CubeLoader=Loader(doload,mprocess)
 
-    if win:
-        CubeLoader._NCubesPerEdge=(5,5,5)
-
     window1 = ARIADNE(os.path.join(application_path,"gui4.ui"))
         
     window1.Neurons=OrderedDict()
@@ -14419,6 +14521,16 @@ if __name__ == "__main__":
 #        window1.Open(window1.Filelist[0]._File)
 #    finally:
 #        1
+
+    #Reserve memory
+    NCubesPerEdge=window1.SpinBox_CubesPerEdge.value()
+    if NCubesPerEdge>maxNCubesPerEdge:
+        NCubesPerEdge=maxNCubesPerEdge;
+    window1.SpinBox_CubesPerEdge.setMaximum(maxNCubesPerEdge)        
+    window1.SpinBox_CubesPerEdge.setValue(maxNCubesPerEdge)
+    CubeLoader.LoadDatasetInformation(None)
+    CubeLoader.LoadDataset()
+    window1.SpinBox_CubesPerEdge.setValue(NCubesPerEdge)
     
     window1.SetSkeletonRadius()
     window1.SetSynapseRadius()
