@@ -21,7 +21,9 @@ int NCubesX, NCubesY, NCubesZ;
 int ForceLoaderFlag=0;
 float *LoaderCurrCoord;
 int *LoaderMag;
-int *ForceLoading;
+int *LoaderState;
+int *CubeSize, NPixelsPerCube, NPixelsInYX;
+
 
 #define LERP(a,l,h)	(l+(h-l)*a)
 
@@ -39,12 +41,12 @@ unsigned char* find_cubeinplane(unsigned int x,unsigned int y,unsigned int z){
 			return invalidCube;
 		}		
 		LoaderMag[0]=Mag+1;
-		LoaderCurrCoord[0]=(((float) (x))*128.0+1.0)*DataScale[Mag*3];
-		LoaderCurrCoord[1]=(((float) (y))*128.0+1.0)*DataScale[Mag*3+1];
-		LoaderCurrCoord[2]=(((float) (z))*128.0+1.0)*DataScale[Mag*3+2];
-		while ((pos==-1) && (ForceLoading[0]>0)){
-			if (ForceLoading[0]!=2){
-				ForceLoading[0]=2;}
+		LoaderCurrCoord[0]=(((float) (x))*((float)CubeSize[0])+1.0)*DataScale[Mag*3];
+		LoaderCurrCoord[1]=(((float) (y))*((float)CubeSize[1])+1.0)*DataScale[Mag*3+1];
+		LoaderCurrCoord[2]=(((float) (z))*((float)CubeSize[2])+1.0)*DataScale[Mag*3+2];
+		while ((pos==-1) && (LoaderState[0]>0)){
+			if (LoaderState[0]!=2){
+				LoaderState[0]=2;}
 			pos=(int)(*(MagOffset[Mag]+cubepos));
 		}
 	}
@@ -62,7 +64,7 @@ unsigned char* find_cubeinplane(unsigned int x,unsigned int y,unsigned int z){
 			break;
 		}
 	}
-	return (HyperCube[imag]+(cubepos-prev_ihypercube)*2097152);
+	return (HyperCube[imag]+(cubepos-prev_ihypercube)*NPixelsPerCube);
 }
 
 unsigned char* find_bordercubeinplane(int x, int y, int z){
@@ -77,15 +79,15 @@ unsigned char *d000,unsigned char *d100,unsigned char *d010,unsigned char *d001,
 	/*bordercalls++;*/
 	unsigned char *pos;
 	int x1, y1, z1, dy,dz, dyz;
-	dy=divy0cube.rem*128;
-	dz=divz0cube.rem*16384;
+	dy=divy0cube.rem*CubeSize[0];
+	dz=divz0cube.rem*NPixelsInYX;
 	dyz=dy+dz;
 	x1=divx0cube.quot+1;
 	y1=divy0cube.quot+1;
 	z1=divz0cube.quot+1;
-	if (divx0cube.rem==127){
-		if (divy0cube.rem==127){
-			if (divz0cube.rem==127){
+	if (divx0cube.rem==CubeSize[0]-1){
+		if (divy0cube.rem==CubeSize[1]-1){
+			if (divz0cube.rem==CubeSize[2]-1){
 				pos=find_bordercubeinplane(divx0cube.quot,divy0cube.quot,divz0cube.quot);
 				pos+=divx0cube.rem+dyz;
 				*d000=(unsigned char)*pos;
@@ -122,53 +124,53 @@ unsigned char *d000,unsigned char *d100,unsigned char *d010,unsigned char *d001,
 				pos=find_bordercubeinplane(divx0cube.quot,divy0cube.quot,divz0cube.quot);
 				pos+=divx0cube.rem+dyz;
 				*d000=(unsigned char)*pos;
-				pos+=16384;
+				pos+=NPixelsInYX;
 				*d001=(unsigned char)*pos;
 
 				pos=find_bordercubeinplane(x1,divy0cube.quot,divz0cube.quot);
 				pos+=dyz;
 				*d100=(unsigned char)*pos;
-				pos+=16384;
+				pos+=NPixelsInYX;
 				*d101=(unsigned char)*pos;
 
 				pos=find_bordercubeinplane(divx0cube.quot,y1,divz0cube.quot);
 				pos+=divx0cube.rem+dz;
 				*d010=(unsigned char)*pos;
-				pos+=16384;
+				pos+=NPixelsInYX;
 				*d011=(unsigned char)*pos;
 
 				pos=find_bordercubeinplane(x1,y1,divz0cube.quot);
 				pos+=dz;
 				*d110=(unsigned char)*pos;
-				pos+=16384;
+				pos+=NPixelsInYX;
 				*d111=(unsigned char)*pos;
 				return 1;
 			}
 		}
 		else{
-			if (divz0cube.rem==127){
+			if (divz0cube.rem==CubeSize[2]-1){
 				pos=find_bordercubeinplane(divx0cube.quot,divy0cube.quot,divz0cube.quot);
 				pos+=divx0cube.rem+dyz;
 				*d000=(unsigned char)*pos;
-				pos+=128;
+				pos+=CubeSize[0];
 				*d010=(unsigned char)*pos;
 
 				pos=find_bordercubeinplane(x1,divy0cube.quot,divz0cube.quot);
 				pos+=dyz;
 				*d100=(unsigned char)*pos;
-				pos+=128;
+				pos+=CubeSize[0];
 				*d110=(unsigned char)*pos;
 
 				pos=find_bordercubeinplane(divx0cube.quot,divy0cube.quot,z1);
 				pos+=divx0cube.rem+dy;
 				*d001=(unsigned char)*pos;
-				pos+=128;
+				pos+=CubeSize[0];
 				*d011=(unsigned char)*pos;
 
 				pos=find_bordercubeinplane(x1,divy0cube.quot,z1);
 				pos+=dy;
 				*d101=(unsigned char)*pos;
-				pos+=128;
+				pos+=CubeSize[0];
 				*d111=(unsigned char)*pos;
 				return 1;
 			}
@@ -176,29 +178,29 @@ unsigned char *d000,unsigned char *d100,unsigned char *d010,unsigned char *d001,
 				pos=find_bordercubeinplane(divx0cube.quot,divy0cube.quot,divz0cube.quot);
 				pos+=divx0cube.rem+dyz;
 				*d000=(unsigned char)*pos;
-				pos+=128;
+				pos+=CubeSize[0];
 				*d010=(unsigned char)*pos;
-				pos+=16384;
+				pos+=NPixelsInYX;
 				*d011=(unsigned char)*pos;
-				pos-=128;
+				pos-=CubeSize[0];
 				*d001=(unsigned char)*pos;
 
 				pos=find_bordercubeinplane(x1,divy0cube.quot,divz0cube.quot);
 				pos+=dyz;
 				*d100=(unsigned char)*pos;						
-				pos+=128;
+				pos+=CubeSize[0];
 				*d110=(unsigned char)*pos;
-				pos+=16384;
+				pos+=NPixelsInYX;
 				*d111=(unsigned char)*pos;
-				pos-=128;
+				pos-=CubeSize[0];
 				*d101=(unsigned char)*pos;
 				return 1;
 			}
 		}
 	}
 	else{
-		if (divy0cube.rem==127){
-			if (divz0cube.rem==127){
+		if (divy0cube.rem==CubeSize[1]-1){
+			if (divz0cube.rem==CubeSize[2]-1){
 				pos=find_bordercubeinplane(divx0cube.quot,divy0cube.quot,divz0cube.quot);
 				pos+=divx0cube.rem+dyz;
 				*d000=(unsigned char)*pos;
@@ -225,7 +227,7 @@ unsigned char *d000,unsigned char *d100,unsigned char *d010,unsigned char *d001,
 				pos+=divx0cube.rem+dyz;
 				*d000=(unsigned char)*pos;
 				*d100=(unsigned char)*(++pos);
-				pos+=16384;
+				pos+=NPixelsInYX;
 				*d101=(unsigned char)*pos;
 				*d001=(unsigned char)*(--pos);
 
@@ -233,19 +235,19 @@ unsigned char *d000,unsigned char *d100,unsigned char *d010,unsigned char *d001,
 				pos+=divx0cube.rem+dz;
 				*d010=(unsigned char)*pos;
 				*d110=(unsigned char)*(++pos);
-				pos+=16384;
+				pos+=NPixelsInYX;
 				*d111=(unsigned char)*pos;
 				*d011=(unsigned char)*(--pos);
 				return 1;
 			}
 		}
 		else{
-			if (divz0cube.rem==127){
+			if (divz0cube.rem==CubeSize[2]-1){
 				pos=find_bordercubeinplane(divx0cube.quot,divy0cube.quot,divz0cube.quot);
 				pos+=divx0cube.rem+dyz;
 				*d000=(unsigned char)*pos;
 				*d100=(unsigned char)*(++pos);
-				pos+=128;
+				pos+=CubeSize[0];
 				*d110=(unsigned char)*pos;
 				*d010=(unsigned char)*(--pos);
 
@@ -253,7 +255,7 @@ unsigned char *d000,unsigned char *d100,unsigned char *d010,unsigned char *d001,
 				pos+=divx0cube.rem+dy;
 				*d001=(unsigned char)*pos;
 				*d101=(unsigned char)*(++pos);
-				pos+=128;
+				pos+=CubeSize[0];
 				*d111=(unsigned char)*pos;
 				*d011=(unsigned char)*(--pos);
 				return 1;
@@ -283,7 +285,7 @@ int interp_ROI(float* currCoord,float* hDir,float* vDir,int* ROISize,unsigned ch
 	ForceLoaderFlag=forceLoaderFlag;
 	LoaderMag=loaderMag;
 	LoaderCurrCoord=loaderCurrCoord;
-	ForceLoading=loaderState;
+	LoaderState=loaderState;
 
 	Mag=mag;	
 	if (Mag<1){
@@ -310,7 +312,7 @@ int interp_ROI(float* currCoord,float* hDir,float* vDir,int* ROISize,unsigned ch
 	if ((VDir[0]==0.0) && (VDir[2]==0.0) && (HDir[0]==0.0) && (HDir[1]==0.0)){ //YZ plane
 		x=vCoord[0];	
 		x0=(int)(x);
-		divx0cube=div(x0,128);
+		divx0cube=div(x0,CubeSize[0]);
 		if ((x<0) || (divx0cube.quot>=NCubesX)){
 			memset(ROI,(unsigned char)255,ROISize[0]*ROISize[1]);
 			return completeLoading;
@@ -326,13 +328,13 @@ int interp_ROI(float* currCoord,float* hDir,float* vDir,int* ROISize,unsigned ch
 				z+=HDir[2];	
 
 				y0=(int)(y);
-				divy0cube=div(y0,128);
+				divy0cube=div(y0,CubeSize[1]);
 				if ((y<0) || (divy0cube.quot>=NCubesY)){
 					*(ROI++)=(unsigned char)255;
 					continue;
 				}
 				z0=(int)(z);
-				divz0cube=div(z0,128);
+				divz0cube=div(z0,CubeSize[0]);
 				if ((z<0) || (divz0cube.quot>=NCubesZ)){
 					*(ROI++)=(unsigned char)255;
 					continue;
@@ -341,21 +343,21 @@ int interp_ROI(float* currCoord,float* hDir,float* vDir,int* ROISize,unsigned ch
 				fy = y - y0;
 				fz = z - z0;
 
-				if ((divx0cube.rem<127) && (divy0cube.rem<127) &&  (divz0cube.rem<127)){
+				if ((divx0cube.rem<CubeSize[0]-1) && (divy0cube.rem<CubeSize[1]-1) &&  (divz0cube.rem<CubeSize[2]-1)){
 					pos=find_cubeinplane((unsigned int)divx0cube.quot,(unsigned int)divy0cube.quot,(unsigned int)divz0cube.quot);
-					pos+=divx0cube.rem+divy0cube.rem*128+divz0cube.rem*16384;
+					pos+=divx0cube.rem+divy0cube.rem*CubeSize[0]+divz0cube.rem*NPixelsInYX;
 					d000=*pos;
 					d100=*(++pos);
 
-					pos+=128;
+					pos+=CubeSize[0];
 					d110=*pos;
 					d010=*(--pos);
 
-					pos+=16384;
+					pos+=NPixelsInYX;
 					d011=*pos;
 					d111=*(++pos);
 
-					pos-=128;
+					pos-=CubeSize[0];
 					d101=*pos;
 					d001=*(--pos);}
 				else{
@@ -368,7 +370,7 @@ int interp_ROI(float* currCoord,float* hDir,float* vDir,int* ROISize,unsigned ch
 	else if ((VDir[0]==0.0) && (VDir[1]==0.0) && (HDir[1]==0.0) && (HDir[2]==0.0)){ //ZX plane
 		y=vCoord[1];	
 		y0=(int)(y);
-		divy0cube=div(y0,128);
+		divy0cube=div(y0,CubeSize[1]);
 		if ((y<0) || (divy0cube.quot>=NCubesY)){
 			memset(ROI,(unsigned char)255,ROISize[0]*ROISize[1]);
 			return completeLoading;
@@ -385,14 +387,14 @@ int interp_ROI(float* currCoord,float* hDir,float* vDir,int* ROISize,unsigned ch
 				z+=HDir[2];	
 
 				x0=(int)(x);
-				divx0cube=div(x0,128);
+				divx0cube=div(x0,CubeSize[0]);
 				if ((x<0) || (divx0cube.quot>=NCubesX)){
 					*(ROI++)=(unsigned char)255;
 					continue;
 				}
 
 				z0=(int)(z);
-				divz0cube=div(z0,128);
+				divz0cube=div(z0,CubeSize[2]);
 				if ((z<0) || (divz0cube.quot>=NCubesZ)){
 					*(ROI++)=(unsigned char)255;
 					continue;
@@ -401,21 +403,21 @@ int interp_ROI(float* currCoord,float* hDir,float* vDir,int* ROISize,unsigned ch
 				fx = x - x0;
 				fz = z - z0;
 
-				if ((divx0cube.rem<127) && (divy0cube.rem<127) &&  (divz0cube.rem<127)){
+				if ((divx0cube.rem<CubeSize[0]-1) && (divy0cube.rem<CubeSize[1]-1) &&  (divz0cube.rem<CubeSize[2]-1)){
 					pos=find_cubeinplane((unsigned int)divx0cube.quot,(unsigned int)divy0cube.quot,(unsigned int)divz0cube.quot);
-					pos+=divx0cube.rem+divy0cube.rem*128+divz0cube.rem*16384;
+					pos+=divx0cube.rem+divy0cube.rem*CubeSize[0]+divz0cube.rem*NPixelsInYX;
 					d000=*pos;
 					d100=*(++pos);
 
-					pos+=128;
+					pos+=CubeSize[0];
 					d110=*pos;
 					d010=*(--pos);
 
-					pos+=16384;
+					pos+=NPixelsInYX;
 					d011=*pos;
 					d111=*(++pos);
 
-					pos-=128;
+					pos-=CubeSize[0];
 					d101=*pos;
 					d001=*(--pos);}
 				else{
@@ -429,7 +431,7 @@ int interp_ROI(float* currCoord,float* hDir,float* vDir,int* ROISize,unsigned ch
 		z=vCoord[2];
 		z0=(int)(z);
 
-		divz0cube=div(z0,128);
+		divz0cube=div(z0,CubeSize[2]);
 		if ((z<0) || (divz0cube.quot>=NCubesZ)){
 			memset(ROI,(unsigned char)255,ROISize[0]*ROISize[1]);
 			return completeLoading;
@@ -446,14 +448,14 @@ int interp_ROI(float* currCoord,float* hDir,float* vDir,int* ROISize,unsigned ch
 				y+=HDir[1];	
 
 				x0=(int)(x);
-				divx0cube=div(x0,128);
+				divx0cube=div(x0,CubeSize[0]);
 				if ((x<0) || (divx0cube.quot>=NCubesX)){
 					*(ROI++)=(unsigned char)255;
 					continue;
 				}
 
 				y0=(int)(y);
-				divy0cube=div(y0,128);
+				divy0cube=div(y0,CubeSize[1]);
 				if ((y<0) || (divy0cube.quot>=NCubesY)){
 					*(ROI++)=(unsigned char)255;
 					continue;
@@ -462,21 +464,21 @@ int interp_ROI(float* currCoord,float* hDir,float* vDir,int* ROISize,unsigned ch
 				fx = x - x0;
 				fy = y - y0;
 
-				if ((divx0cube.rem<127) && (divy0cube.rem<127) &&  (divz0cube.rem<127)){
+				if ((divx0cube.rem<CubeSize[0]-1) && (divy0cube.rem<CubeSize[1]-1) &&  (divz0cube.rem<CubeSize[2]-1)){
 					pos=find_cubeinplane((unsigned int)divx0cube.quot,(unsigned int)divy0cube.quot,(unsigned int)divz0cube.quot);
-					pos+=divx0cube.rem+divy0cube.rem*128+divz0cube.rem*16384;
+					pos+=divx0cube.rem+divy0cube.rem*CubeSize[0]+divz0cube.rem*NPixelsInYX;
 					d000=*pos;
 					d100=*(++pos);
 
-					pos+=128;
+					pos+=CubeSize[0];
 					d110=*pos;
 					d010=*(--pos);
 
-					pos+=16384;
+					pos+=NPixelsInYX;
 					d011=*pos;
 					d111=*(++pos);
 
-					pos-=128;
+					pos-=CubeSize[0];
 					d101=*pos;
 					d001=*(--pos);}
 				else{
@@ -500,21 +502,21 @@ int interp_ROI(float* currCoord,float* hDir,float* vDir,int* ROISize,unsigned ch
 				z+=HDir[2];	
 
 				x0=(int)(x);
-				divx0cube=div(x0,128);
+				divx0cube=div(x0,CubeSize[0]);
 				if ((x<0) || (divx0cube.quot>=NCubesX)){
 					*(ROI++)=(unsigned char)255;
 					continue;
 				}
 
 				y0=(int)(y);
-				divy0cube=div(y0,128);
+				divy0cube=div(y0,CubeSize[1]);
 				if ((y<0) || (divy0cube.quot>=NCubesY)){
 					*(ROI++)=(unsigned char)255;
 					continue;
 				}	
 
 				z0=(int)(z);
-				divz0cube=div(z0,128);
+				divz0cube=div(z0,CubeSize[2]);
 				if ((z<0) || (divz0cube.quot>=NCubesZ)){
 					*(ROI++)=(unsigned char)255;
 					continue;
@@ -524,21 +526,21 @@ int interp_ROI(float* currCoord,float* hDir,float* vDir,int* ROISize,unsigned ch
 				fy = y - y0;
 				fz = z - z0;
 
-				if ((divx0cube.rem<127) && (divy0cube.rem<127) &&  (divz0cube.rem<127)){
+				if ((divx0cube.rem<CubeSize[0]-1) && (divy0cube.rem<CubeSize[1]-1) &&  (divz0cube.rem<CubeSize[2]-1)){
 					pos=find_cubeinplane((unsigned int)divx0cube.quot,(unsigned int)divy0cube.quot,(unsigned int)divz0cube.quot);
-					pos+=divx0cube.rem+divy0cube.rem*128+divz0cube.rem*16384;
+					pos+=divx0cube.rem+divy0cube.rem*CubeSize[0]+divz0cube.rem*NPixelsInYX;
 					d000=*pos;
 					d100=*(++pos);
 
-					pos+=128;
+					pos+=CubeSize[0];
 					d110=*pos;
 					d010=*(--pos);
 
-					pos+=16384;
+					pos+=NPixelsInYX;
 					d011=*pos;
 					d111=*(++pos);
 
-					pos-=128;
+					pos-=CubeSize[0];
 					d101=*pos;
 					d001=*(--pos);}
 				else{
@@ -567,19 +569,22 @@ int release_ROI(void){
 	HyperCube[1]=NULL;
 	HyperCube[2]=NULL;
 	AllCubes[0]=NULL;
-	NCubesPerEdge=NULL;
 	NMag=NULL;
 	DataScale=NULL;
+	CubeSize=NULL;
 	NCubesPerEdge=NULL;
 	NumberofCubes=NULL;
 
+	LoaderMag=NULL;
+	LoaderCurrCoord=NULL;
+	LoaderState=NULL;
 
 	printf("..done.\n");
 	initialized=0;
 	return 1;
 }
 
-int init_ROI(unsigned char* hyperCube0,unsigned char* hyperCube1,unsigned char* hyperCube2,short int* allCubes,int* nMag, float* dataScale, int* nCubesPerEdge,int* numberofCubes){
+int init_ROI(unsigned char* hyperCube0,unsigned char* hyperCube1,unsigned char* hyperCube2,short int* allCubes,int* nMag, float* dataScale,int* cubeSize, int* nCubesPerEdge,int* numberofCubes){
 	if (initialized==1){
 		release_ROI();
 	}
@@ -587,17 +592,21 @@ int init_ROI(unsigned char* hyperCube0,unsigned char* hyperCube1,unsigned char* 
 	int imag;
 	
 	/* Assign input parameters*/
+	CubeSize=cubeSize;
 	NCubesPerEdge=nCubesPerEdge;
 	NumberofCubes=numberofCubes;
 	DataScale=dataScale;
 	NMag=nMag;
+	
+	NPixelsInYX=CubeSize[0]*CubeSize[1];
+	NPixelsPerCube=NPixelsInYX*CubeSize[2];
     
 	NCubes=0;
 	for (imag=0;imag<3;imag++){NCubes+=NCubesPerEdge[imag]*NCubesPerEdge[imag]*NCubesPerEdge[imag];}
 
-	invalidCube=(unsigned char*)calloc(2097152,sizeof(unsigned char));
+	invalidCube=(unsigned char*)calloc(NPixelsPerCube,sizeof(unsigned char));
 	if (invalidCube==NULL){printf("Could not allocate memory for invalidCube.\n");return -1;}	
-	memset(invalidCube,(unsigned char)(255),2097152*sizeof(unsigned char));
+	memset(invalidCube,(unsigned char)(255),NPixelsPerCube*sizeof(unsigned char));
 
 	HyperCube[0]=hyperCube0;
 	HyperCube[1]=hyperCube1;
@@ -606,7 +615,7 @@ int init_ROI(unsigned char* hyperCube0,unsigned char* hyperCube1,unsigned char* 
 	AllCubes[0]=allCubes;
 
 	printf("Initialized ROI extraction with the following parameters:\nCubeSize: (%i,%i,%i), NCubesPerEdge: (%i,%i,%i)\n",\
-		128,128,128,\
+		CubeSize[0],CubeSize[1],CubeSize[2],\
 		NCubesPerEdge[0],NCubesPerEdge[1],NCubesPerEdge[2]);
 
 	for (imag=0;imag<*NMag;imag++){

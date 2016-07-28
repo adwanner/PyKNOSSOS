@@ -4,23 +4,26 @@
 #QxtSpanSlider.py https://github.com/mkilling/QxtSpanSlider.py
 #images2gif https://bitbucket.org/bench/images2gif.py 
 
+#This has been used successfully with the following PyQt4 versions 
+#Qt version:   4.8.6  (windows and linux)
+#SIP version:  4.16.2 (windows) and 4.15.5 (linux)
+#PyQt version: 4.11.1 (windows) and 4.10.4 (linux)
+
 #developer switches
 usermode=0 #0: expert mode, 1: user mode
 
 doload=1 #start cube loader
-mprocess=1 #use seperate process for cube loader (unfortunately not compatible with showconsole)
-showconsole=0 #show python console #has been tested successfully only for linux
+mprocess=1 #use seperate process for cube loader
 experimental=1 #show experimental features
 
 #your encryption key used for encrypting and decrypting annotation files
 encryptionkey='EncryptPyKnossos';
 #AES key must be either 16, 24, or 32 bytes long
 
-PyKNOSSOS_VERSION='PyKNOSSOS1.220160602'
+PyKNOSSOS_VERSION='PyKNOSSOS1.220160727'
 
 if usermode==1:
     experimental=0
-    showconsole=0
     mprocess=1
     doload=1
 
@@ -76,9 +79,7 @@ from Crypto.Cipher import AES
 
 import images2gif
 from PIL import Image
-
-if showconsole:
-    from spyderlib.widgets.internalshell import InternalShell as SpyderShell
+import imp
 
 #global variable, makes sure that lines and vertices lying on the reslice plane are rendered on top of the reslices
 #vtk.vtkDataSetMapper.SetResolveCoincidentTopologyToShiftZBuffer()
@@ -227,7 +228,7 @@ print "application path: " + application_path
 
 maxNStreamingChannels=50;
 if win:
-    maxNCubesPerEdge=5; #On windows we are limited by 32bit
+    maxContRAMBlock=5*5*5*128*128*128+1; #On windows we are limited by 32bit
     #Note: The number of cubes in memory: NCubesInMemory= 3 * NCubesPerEdge^3
     #Memory usage: NCubesInMemory*CubeSize^3
     print application_path;
@@ -237,7 +238,7 @@ if win:
     lib_path=os.path.join(temp_dir,r"extractROIlib.dll")
     extractROIlib = cdll.LoadLibrary(lib_path)
 else:
-    maxNCubesPerEdge=9; #No real limit, but 10 is already a lot...
+    maxContRAMBlock=9*9*9*128*128*128+1; #No real limit, but 10 is already a lot...
     #Note: The number of cubes in memory = 3 * NCubesPerEdge^3
     #Memory usage: NCubesInMemory*CubeSize^3
     loaderlib = cdll.LoadLibrary(os.path.join(application_path, r"clibraries/loaderlib.so"))
@@ -868,6 +869,7 @@ class Loader:
     filename=None
     _NCubesPerEdge=(5,5,5)
     _NStreamingChannels=5;
+    _CubeSize=(128,128,128)
     _NumberofCubes=(120,120,120)
     _BaseName=""
     _BaseExt=".raw"
@@ -897,10 +899,12 @@ class Loader:
         self.ShortestEdge=[]
 
     def LoadDatasetInformation(self,filename):
+        NPixels=self._CubeSize[0]*self._CubeSize[1]*self._CubeSize[2];
+        maxNCubesPerEdge=np.floor((float(maxContRAMBlock)/float(NPixels))**(1.0/3.0))
+        window1.SpinBox_CubesPerEdge.setMaximum(maxNCubesPerEdge)
         NCubesPerEdge=int(window1.SpinBox_CubesPerEdge.value())
         if NCubesPerEdge>maxNCubesPerEdge:
             NCubesPerEdge=int(maxNCubesPerEdge);
-            window1.SpinBox_CubesPerEdge.setMaximum(maxNCubesPerEdge)
             window1.SpinBox_CubesPerEdge.setValue(NCubesPerEdge)
         if NCubesPerEdge<1:
             NCubesPerEdge=1;
@@ -935,14 +939,29 @@ class Loader:
         self._Origin=[0.0,0.0,0.0]
         self._NumberofCubes=(120,120,120)
         self._DataScale=(1.0,1.0,1.0)
+        self._CubeSize=(128,128,128)
         DataSetConf=config(filename)        
         DataSetConf.LoadConfig(self,"Dataset")
         self._BasePath=os.path.dirname(filename)
         if not self._Extent:     
             self._Extent=[\
-            128.0*self._NumberofCubes[0],\
-            128.0*self._NumberofCubes[1],\
-            128.0*self._NumberofCubes[2]]
+            float(self._CubeSize[0])*self._NumberofCubes[0],\
+            float(self._CubeSize[1])*self._NumberofCubes[1],\
+            float(self._CubeSize[2])*self._NumberofCubes[2]]
+
+        NPixels=self._CubeSize[0]*self._CubeSize[1]*self._CubeSize[2];
+        maxNCubesPerEdge=np.floor((float(maxContRAMBlock)/float(NPixels))**(1.0/3.0))
+        window1.SpinBox_CubesPerEdge.setMaximum(maxNCubesPerEdge)
+        NCubesPerEdge=int(window1.SpinBox_CubesPerEdge.value())
+        if NCubesPerEdge>maxNCubesPerEdge:
+            NCubesPerEdge=int(maxNCubesPerEdge);
+            window1.SpinBox_CubesPerEdge.setMaximum(maxNCubesPerEdge)
+            window1.SpinBox_CubesPerEdge.setValue(NCubesPerEdge)
+        if NCubesPerEdge<1:
+            NCubesPerEdge=1;
+            window1.SpinBox_CubesPerEdge.setValue(NCubesPerEdge)
+        self._NCubesPerEdge=(NCubesPerEdge,NCubesPerEdge,NCubesPerEdge)
+
         return self._BaseName
    
     def LoadDataset(self):     
@@ -1025,7 +1044,7 @@ class Loader:
             #up to several seconds...
             self.LoaderProcess = multiprocessing.Process(target=self.LoaderLoop, \
                 args=(self.Position,self.LoaderState,self.HyperCube0,self.HyperCube1,self.HyperCube2,self.AllCubes,\
-                self.DataScale,self.NMags,self.Magnification,self.NumberofCubes,\
+                self.DataScale,self.CubeSize,self.NMags,self.Magnification,self.NumberofCubes,\
                 self.BaseName,self.BaseExt,self.BasePath,self.NCubesPerEdge,self.FileType,\
                 self.BaseURL,self.UserName,self.Password,self.ServerFormat,\
                 self.NStreamingChannels,self.WorkingOffline,self.NCubes2Load))
@@ -1053,7 +1072,7 @@ class Loader:
             if self.LoaderState[0]==0:
                 print "Start loader..."            
                 loaderlib.init_loader(self.Position,self.HyperCube0,self.HyperCube1,self.HyperCube2,self.AllCubes,\
-                    self.NCubesPerEdge,self.BasePath,self.BaseName,self.BaseExt,self.NMags,self.DataScale,self.NumberofCubes,\
+                    self.NCubesPerEdge,self.BasePath,self.BaseName,self.BaseExt,self.NMags,self.DataScale,self.CubeSize,self.NumberofCubes,\
                     self.Magnification,self.FileType,self.BaseURL,self.UserName,self.Password,self.ServerFormat,\
                     self.NStreamingChannels,self.WorkingOffline,self.NCubes2Load,self.LoaderState)
             self.LoaderState[0]=1
@@ -1097,6 +1116,7 @@ class Loader:
         
         self.Magnification=RawArray(c_int,[self._Magnification])
         self.DataScale=RawArray(c_float,self._DataScale[:])
+        self.CubeSize=RawArray(c_int,self._CubeSize[:])
         self.NumberofCubes=RawArray(c_int,self._NumberofCubes[:])
         self.FileType=RawArray(c_int,[self._FileType])
         self.ServerFormat=RawArray(c_int,[self._ServerFormat])
@@ -1106,19 +1126,20 @@ class Loader:
         for imag in range(NMags):
             self.ShortestEdge.append(\
                 np.min(np.multiply(self._NCubesPerEdge,\
-                        np.multiply([128.0,128.0,128.0],\
+                        np.multiply([float(self._CubeSize[0]),float(self._CubeSize[1]),float(self._CubeSize[2])],\
                             self._DataScale[imag*3:(imag+1)*3]))))
         self.NMags=RawArray(c_int,[NMags])
         
         if not hasattr(self,'Position'):
             self.Position=RawArray(c_float,(1000.0,1000.0,1000.0))
         
+        NPixels=(self._CubeSize[0]*self._CubeSize[1]*self._CubeSize[2])
         if not hasattr(self,'HyperCube0'):
-            self.HyperCube0=RawArray(c_ubyte,(self._NCubesPerEdge[0]**3)*128*128*128)
+            self.HyperCube0=RawArray(c_ubyte,(self._NCubesPerEdge[0]**3)*NPixels)
         if not hasattr(self,'HyperCube1'):
-            self.HyperCube1=RawArray(c_ubyte,(self._NCubesPerEdge[1]**3)*128*128*128)
+            self.HyperCube1=RawArray(c_ubyte,(self._NCubesPerEdge[1]**3)*NPixels)
         if not hasattr(self,'HyperCube2'):
-            self.HyperCube2=RawArray(c_ubyte,(self._NCubesPerEdge[2]**3)*128*128*128)
+            self.HyperCube2=RawArray(c_ubyte,(self._NCubesPerEdge[2]**3)*NPixels)
         totalNCubes=0;
         for imag in range(NMags):
             totalNCubes+=self._NumberofCubes[imag*3+0]*self._NumberofCubes[imag*3+1]*self._NumberofCubes[imag*3+2]
@@ -1143,7 +1164,7 @@ class Loader:
             self.LoaderState[0]=1;
 
     def LoaderLoop(self,Position,LoaderState,HyperCube0,HyperCube1,HyperCube2,\
-        AllCubes,DataScale,NMags,Magnification,NumberofCubes,\
+        AllCubes,DataScale,CubeSize,NMags,Magnification,NumberofCubes,\
         BaseName,BaseExt,BasePath,NCubesPerEdge,FileType,BaseURL,UserName,Password,ServerFormat,\
         NStreamingChannels,WorkingOffline,NCubes2Load): 
 #        for iloop in range(100):
@@ -1152,7 +1173,7 @@ class Loader:
         if LoaderState[0]==0:
             print "Start loader..."            
             loaderlib.init_loader(Position,HyperCube0,HyperCube1,HyperCube2,AllCubes,\
-                NCubesPerEdge,BasePath,BaseName,BaseExt,NMags,DataScale,NumberofCubes,Magnification,\
+                NCubesPerEdge,BasePath,BaseName,BaseExt,NMags,DataScale,CubeSize,NumberofCubes,Magnification,\
                 FileType,BaseURL,UserName,Password,ServerFormat,NStreamingChannels,\
                 WorkingOffline,NCubes2Load,LoaderState)
         LoaderState[0]=5
@@ -1197,11 +1218,11 @@ class Loader:
 
         if self.ROIState.value==0:
             extractROIlib.init_ROI(self.HyperCube0,self.HyperCube1,self.HyperCube2,\
-            self.AllCubes,self.NMags,self.DataScale,self.NCubesPerEdge,self.NumberofCubes)
+            self.AllCubes,self.NMags,self.DataScale,self.CubeSize,self.NCubesPerEdge,self.NumberofCubes)
         elif self.ROIState.value>0:
             extractROIlib.release_ROI(None)   
             extractROIlib.init_ROI(self.HyperCube0,self.HyperCube1,self.HyperCube2,\
-            self.AllCubes,self.NMags,self.DataScale,self.NCubesPerEdge,self.NumberofCubes)
+            self.AllCubes,self.NMags,self.DataScale,self.CubeSize,self.NCubesPerEdge,self.NumberofCubes)
         self.ROIState.value=1
 
 
@@ -4746,6 +4767,7 @@ class objs():
         return True
         
     def set_new_neuronId(self,neuronId):
+        oldNeuronID=self.NeuronID
         self.NeuronID=neuronId
         if hasattr(self,'data'):
             if not (not self.data):    
@@ -4769,6 +4791,10 @@ class objs():
 
         for key, child in self.children.iteritems():
             child.set_new_neuronId(neuronId)
+        if oldNeuronID in self.ariadne.Neurons:
+            if (self == self.ariadne.Neurons[oldNeuronID]) and (not neuronId in self.ariadne.Neurons):
+                self.ariadne.Neurons[neuronId]=self
+                self.ariadne.Neurons.pop(oldNeuronID, None)
         
     def get_prev_obj(self,start_Idx=None,warparound=True):
         NObjs=self.data.GetNumberOfCells()
@@ -8711,6 +8737,12 @@ class tag(objs):
             if not actor.GetProperty().GetPointSize()==0:
                 actor.GetProperty().SetPointSize(0)
                 actor.Modified()
+
+class menuPlugin(QtGui.QAction):
+    _Name=""
+    _File=""
+    def __init__(self,parent,**kw):
+        QtGui.QAction.__init__(self,parent,**kw)
                 
 class menuDataset(QtGui.QAction):
     _Name=""
@@ -8729,6 +8761,8 @@ class ARIADNE(QtGui.QMainWindow):
     _StartPosition=[]
     _WorkingOffline=0;
     DemDriFiles={}; #demand-driven files
+    Plugins=OrderedDict()
+    console=None
     
     def __init__(self,uifile):
         QtGui.QMainWindow.__init__(self)
@@ -8739,6 +8773,7 @@ class ARIADNE(QtGui.QMainWindow):
         self.planeROIs={}
         self.intersections={}
         self.Neurons=OrderedDict()
+        self.Plugins=OrderedDict()
         self.job=job(self)
         #gui elements whose value/state is saved in the configuration file.
         #gui elements whose name starts with '_' are excluded.
@@ -8763,7 +8798,8 @@ class ARIADNE(QtGui.QMainWindow):
                 
         self.QRWin.ariadne=self
                 
-        self.ObjectBrowser=ObjectBrowser(self.ObjectBrowser)
+        self.ObjectBrowser.__class__=ObjectBrowser
+        self.ObjectBrowser.__init__(self.ObjectBrowser.parent())
 
         myconfig.LoadConfig(self,"ARIADNE")
 
@@ -8773,29 +8809,7 @@ class ARIADNE(QtGui.QMainWindow):
         self.tempLUT.SetNumberOfTableValues(NTableValues)
         self.tempLUT.Build()
 
-        if showconsole:
-            ns = {'ariadne': self, 'CubeLoader': CubeLoader,'planeROI': planeROI}#, 'widget': self.centralWidget()}
-            msg = "Try for example: widget.set_text('foobar') or win.close()"
-            # Note: by default, the internal shell is multithreaded which is safer
-            # but not compatible with graphical user interface creation.
-            # For example, if you need to plot data with Matplotlib, you will need
-            # to pass the option: multithreaded=False
-            cons = SpyderShell(self,multithreaded=False, namespace=ns, message=msg)
-            self.shell = cons
-            
-             # Create the console widget
-            font = QtGui.QFont("Courier new")
-            font.setPointSize(10)
-            # Setup the console widget
-            cons.set_font(font)
-            cons.set_codecompletion_auto(True)
-            cons.set_calltips(True)
-            cons.setup_calltips(size=600, font=font)
-            cons.setup_completion(size=(300, 180), font=font)
-            self.Console.setWidget(cons)
-            self.Console.setFloating(1)
-        else:
-            self.Console.setVisible(0)
+        self.Console.setVisible(0)
 
         self.comboBox_TaskType.addItem("Tracing")
         
@@ -8849,7 +8863,7 @@ class ARIADNE(QtGui.QMainWindow):
         self.menuDataset.insertSeparator(self.ActionLoadNewDataset)
         
         self.menuDatasets.reverse()
-        
+
         for idataset in range(self.menuDatasets.__len__()-1,-1,-1):
             dataset=self.menuDatasets[idataset]
             if not myconfig.LoadConfig(dataset,"Dataset{0}".format(self.menuDatasets.__len__()-1-idataset)):
@@ -8859,6 +8873,25 @@ class ARIADNE(QtGui.QMainWindow):
             text = "&%d %s" % (self.menuDatasets.__len__()-1-idataset + 1, dataset._Name)
             dataset.setText(text)
             dataset.setVisible(True)
+        
+        self.menuPluginList=list()        
+        for iplugin in range(5):
+            mplugin=menuPlugin(self, visible=False,triggered=self.RunPlugin)
+            self.menuPluginList.append(mplugin)
+            self.menuPlugins.insertAction(self.ActionLoadPlugin,mplugin)
+        self.menuPlugins.insertSeparator(self.ActionLoadPlugin)
+        
+        self.menuPluginList.reverse()
+        
+        for iplugin in range(self.menuPluginList.__len__()-1,-1,-1):
+            mplugin=self.menuPluginList[iplugin]
+            if not myconfig.LoadConfig(mplugin,"Plugin{0}".format(self.menuPluginList.__len__()-1-iplugin)):
+                break
+            if mplugin._Name=='':
+                break
+            text = "&%d %s" % (self.menuPluginList.__len__()-1-iplugin + 1, mplugin._Name)
+            mplugin.setText(text)
+            mplugin.setVisible(True)
             
         if hasattr(self,'_StartPosition'):
             if self._StartPosition.__len__()>3:
@@ -8895,7 +8928,7 @@ class ARIADNE(QtGui.QMainWindow):
 
         ROISize=361
 
-        InterPolFactor=(CubeLoader._NCubesPerEdge[0]-1)*128.0/np.sqrt(2.0)/361;
+        InterPolFactor=(CubeLoader._NCubesPerEdge[0]-1)*CubeLoader._CubeSize[0]/np.sqrt(2.0)/361;
         CubeLoader.InterPolFactor=min(2.0,max(1.0,InterPolFactor));
         if InterPolFactor>2.0:
             ROISize=2.0*np.floor(361*InterPolFactor/4.0)+1.0
@@ -9040,8 +9073,7 @@ class ARIADNE(QtGui.QMainWindow):
         self.Settings.setFloating(0)
                       
         
-        if showconsole:
-            self.Console.setFloating(0)
+        self.Console.setFloating(0)
             
         if usermode>0:
             self.File.removeAction(self.ActionExportSynapses)
@@ -9136,24 +9168,36 @@ class ARIADNE(QtGui.QMainWindow):
                 break
             myconfig.SaveConfig(dataset,"Dataset{0}".format(self.menuDatasets.__len__()-1-idataset))
 
+        for iplugin in range(self.menuPluginList.__len__()-1,-1,-1):
+            mplugin=self.menuPluginList[iplugin]
+            if mplugin._File=='':
+                break
+            myconfig.SaveConfig(mplugin,"Plugin{0}".format(self.menuPluginList.__len__()-1-iplugin))
+
         for ifile in range(self.Filelist.__len__()):
             recentFile=self.Filelist[ifile]
             if recentFile._File=='':
                 break
             myconfig.SaveConfig(recentFile,"RecentFile{0}".format(ifile))
 
+        for pluginName,plugin in self.Plugins.iteritems():
+            myconfig.SaveConfig(plugin,pluginName)
+            
+
         myconfig.write()
 
-        if showconsole:
+        if hasattr(self.console,'exit_interpreter'):
             self.console.exit_interpreter()
         event.accept()
         
 
-    def SetupGUIState(self):
+    def SetupGUIState(self,GUIobj):
         if not myconfig.has_key("GUIstate"):
             return        
+        if not hasattr(GUIobj,'findChildren'):
+            return
         for element in self.GUIElements:
-            children=self.findChildren(element)
+            children=GUIobj.findChildren(element)
             for child in children:
                 childName=unicode(child.objectName())
                 if childName.startswith("_"):
@@ -9194,10 +9238,10 @@ class ARIADNE(QtGui.QMainWindow):
         QtCore.QObject.connect(self.ckbx_HideSkelViewport,QtCore.SIGNAL("stateChanged(int)"),self.HideSkelViewport)  
         QtCore.QObject.connect(self.ckbx_ShowBoundingBox,QtCore.SIGNAL("stateChanged(int)"),self.ShowBoundingBox)  
         
-        QtCore.QObject.connect(self.cbkx_HideYXplane,QtCore.SIGNAL("stateChanged(int)"),self.ChangePlaneVisMode)        
-        QtCore.QObject.connect(self.cbkx_HideYZplane,QtCore.SIGNAL("stateChanged(int)"),self.ChangePlaneVisMode)        
-        QtCore.QObject.connect(self.cbkx_HideZXplane,QtCore.SIGNAL("stateChanged(int)"),self.ChangePlaneVisMode)        
-        QtCore.QObject.connect(self.cbkx_Hidearbitplane,QtCore.SIGNAL("stateChanged(int)"),self.ChangePlaneVisMode)        
+        QtCore.QObject.connect(self.ckbx_HideYXplane,QtCore.SIGNAL("stateChanged(int)"),self.ChangePlaneVisMode)        
+        QtCore.QObject.connect(self.ckbx_HideYZplane,QtCore.SIGNAL("stateChanged(int)"),self.ChangePlaneVisMode)        
+        QtCore.QObject.connect(self.ckbx_HideZXplane,QtCore.SIGNAL("stateChanged(int)"),self.ChangePlaneVisMode)        
+        QtCore.QObject.connect(self.ckbx_Hidearbitplane,QtCore.SIGNAL("stateChanged(int)"),self.ChangePlaneVisMode)        
         QtCore.QObject.connect(self.ckbx_HideBorder,QtCore.SIGNAL("stateChanged(int)"),self.ChangeBorderVisMode)        
         QtCore.QObject.connect(self.ckbx_SynZoom,QtCore.SIGNAL("stateChanged(int)"),self.ChangeSynZoom)  
         QtCore.QObject.connect(self.ckbx_ClipHulls,QtCore.SIGNAL("stateChanged(int)"),
@@ -9228,10 +9272,10 @@ class ARIADNE(QtGui.QMainWindow):
         QtCore.QObject.connect(self.text_OrthvDir,QtCore.SIGNAL("textEdited(QString)"), 
            lambda  value, obj="vDir": self.TransformOrthViewport(obj,value))
 
-        QtCore.QObject.connect(self.cbkx_ShowYXScaleBar,QtCore.SIGNAL("stateChanged(int)"),self.ChangeBorderVisMode)   
-        QtCore.QObject.connect(self.cbkx_ShowYZScaleBar,QtCore.SIGNAL("stateChanged(int)"),self.ChangeBorderVisMode)   
-        QtCore.QObject.connect(self.cbkx_ShowZXScaleBar,QtCore.SIGNAL("stateChanged(int)"),self.ChangeBorderVisMode)   
-        QtCore.QObject.connect(self.cbkx_ShowArbitScaleBar,QtCore.SIGNAL("stateChanged(int)"),self.ChangeBorderVisMode)   
+        QtCore.QObject.connect(self.ckbx_ShowYXScaleBar,QtCore.SIGNAL("stateChanged(int)"),self.ChangeBorderVisMode)   
+        QtCore.QObject.connect(self.ckbx_ShowYZScaleBar,QtCore.SIGNAL("stateChanged(int)"),self.ChangeBorderVisMode)   
+        QtCore.QObject.connect(self.ckbx_ShowZXScaleBar,QtCore.SIGNAL("stateChanged(int)"),self.ChangeBorderVisMode)   
+        QtCore.QObject.connect(self.ckbx_ShowArbitScaleBar,QtCore.SIGNAL("stateChanged(int)"),self.ChangeBorderVisMode)   
         QtCore.QObject.connect(self.SpinBoxScaleBar,QtCore.SIGNAL("editingFinished()"),
            lambda  value=None,parameter="length": self.ChangeScaleBar(parameter,value))
         QtCore.QObject.connect(self.SpinBox_ScaleBarWidth,QtCore.SIGNAL("editingFinished()"),
@@ -9269,9 +9313,9 @@ class ARIADNE(QtGui.QMainWindow):
         QtCore.QObject.connect(self.ckbx_HideFocalpoint,QtCore.SIGNAL("stateChanged(int)"),self.QRWin.HideFocalpoint)
 
         QtCore.QObject.connect(self.RegionAlpha,QtCore.SIGNAL("valueChanged(int)"),self.SetRegionVisibility)                
-        QtCore.QObject.connect(self.cbx_HideRegionLabels,QtCore.SIGNAL("stateChanged(int)"),lambda: self.HideRegionLabels())        
+        QtCore.QObject.connect(self.ckbx_HideRegionLabels,QtCore.SIGNAL("stateChanged(int)"),lambda: self.HideRegionLabels())        
         QtCore.QObject.connect(self.SomaAlpha,QtCore.SIGNAL("valueChanged(int)"),self.SetSomaVisibility)                
-        QtCore.QObject.connect(self.cbx_HideSomaLabels,QtCore.SIGNAL("stateChanged(int)"),lambda: self.HideSomaLabels())        
+        QtCore.QObject.connect(self.ckbx_HideSomaLabels,QtCore.SIGNAL("stateChanged(int)"),lambda: self.HideSomaLabels())        
         QtCore.QObject.connect(self.SpinBox_LineWidth,QtCore.SIGNAL("editingFinished()"),self.SetSkelLineWidth)        
 
         QtCore.QObject.connect(self.SpinBox_CubesPerEdge,QtCore.SIGNAL("editingFinished()"),\
@@ -9330,6 +9374,7 @@ class ARIADNE(QtGui.QMainWindow):
         QtCore.QObject.connect(self.ActionSetDefaultDataPath,QtCore.SIGNAL("triggered()"),self.SetDefaultDataPath)
         QtCore.QObject.connect(self.ActionWorkingOffline,QtCore.SIGNAL("triggered()"),self.WorkingOffline)
         
+        QtCore.QObject.connect(self.ActionLoadPlugin,QtCore.SIGNAL("triggered()"),self.RunPlugin)
         
         QtCore.QObject.connect(self._SpinBoxNeuronId,QtCore.SIGNAL("editingFinished()"),
            lambda source='spinbox1': self.GotoNode(source))        
@@ -9706,7 +9751,7 @@ class ARIADNE(QtGui.QMainWindow):
         self.QRWin.SetActiveObj("skeleton",NeuronID,newSeedId)
         self.QRWin.GotoActiveObj()
         
-    def NewNeuron(self,NeuronID=None):
+    def NewNeuron(self,NeuronID=None,objtype='neuron'):
         if NeuronID==None:
             NeuronID=self._SpinBoxNeuronId.value()
             if NeuronID in self.Neurons:
@@ -9721,8 +9766,14 @@ class ARIADNE(QtGui.QMainWindow):
         
         ineuron=self.Neurons.__len__()
         color=self.get_autocolor(ineuron)
-
-        self.Neurons[NeuronID]=neuron(self.ObjectBrowser.model(),NeuronID,color)
+        if objtype=='neuron':
+            self.Neurons[NeuronID]=neuron(self.ObjectBrowser.model(),NeuronID,color)
+        elif objtype=='area':
+            self.Neurons[NeuronID]=area(self.ObjectBrowser.model(),NeuronID,color)
+        else:
+            print "Unknown objtype: ", objtype
+            return
+            
         self.Neurons[NeuronID].start_VisEngine(self)
         print "Created new neuron with ID {0}.".format(NeuronID)
         self.QRWin.SetActiveObj("neuron",NeuronID)
@@ -10175,10 +10226,10 @@ class ARIADNE(QtGui.QMainWindow):
         iviewport=self.QRWin.viewports["skeleton_viewport"]
         
         for key,checkbox in [\
-            ['Orth_planeROI',self.cbkx_ShowArbitScaleBar],
-            ['YX_planeROI',self.cbkx_ShowYXScaleBar],
-            ['YZ_planeROI',self.cbkx_ShowYZScaleBar],
-            ['ZX_planeROI',self.cbkx_ShowZXScaleBar]]:
+            ['Orth_planeROI',self.ckbx_ShowArbitScaleBar],
+            ['YX_planeROI',self.ckbx_ShowYXScaleBar],
+            ['YZ_planeROI',self.ckbx_ShowYZScaleBar],
+            ['ZX_planeROI',self.ckbx_ShowZXScaleBar]]:
                          
             if key in iviewport._LinkedPlaneOutlines:
                 if not (key in self.planeROIs):
@@ -10211,7 +10262,7 @@ class ARIADNE(QtGui.QMainWindow):
 
     def ChangeSynZoom(self,synzoom=None):
         if synzoom==None:
-            synzoom=self.cbkx_SynZoom.isChecked()
+            synzoom=self.ckbx_SynZoom.isChecked()
         if synzoom>0:
             self.QRWin.SynZoom=1
             for key,iviewport in self.QRWin.viewports.iteritems():
@@ -10354,10 +10405,10 @@ class ARIADNE(QtGui.QMainWindow):
 
             
     def ChangePlaneVisMode(self,state=None):
-        hide_YXplane=self.cbkx_HideYXplane.isChecked()
-        hide_YZplane=self.cbkx_HideYZplane.isChecked()
-        hide_ZXplane=self.cbkx_HideZXplane.isChecked()
-        hide_arbitplane=self.cbkx_Hidearbitplane.isChecked()
+        hide_YXplane=self.ckbx_HideYXplane.isChecked()
+        hide_YZplane=self.ckbx_HideYZplane.isChecked()
+        hide_ZXplane=self.ckbx_HideZXplane.isChecked()
+        hide_arbitplane=self.ckbx_Hidearbitplane.isChecked()
 
         if not "skeleton_viewport" in self.QRWin.viewports:
             return
@@ -10781,7 +10832,7 @@ class ARIADNE(QtGui.QMainWindow):
 #        InterPolFactor=CubeLoader.InterPolFactor;
 #        if ROISize>361:
         ROISize=361
-        InterPolFactor=(CubeLoader._NCubesPerEdge[0]-1)*128.0/np.sqrt(2.0)/361;
+        InterPolFactor=(CubeLoader._NCubesPerEdge[0]-1)*float(CubeLoader._CubeSize[0])/np.sqrt(2.0)/361;
         CubeLoader.InterPolFactor=min(2.0,max(1.0,InterPolFactor));
         if InterPolFactor>2.0:
             ROISize=2.0*np.floor(361*InterPolFactor/4.0)+1.0
@@ -11000,7 +11051,26 @@ class ARIADNE(QtGui.QMainWindow):
         SelObj=[None,None,None]
         editPosition=[None,None,None]
         dataset=None
+        
+        if SilentMode:
+            showprogress=0
+        else:
+            showprogress=1
+        if showprogress:
+            progress = QtGui.QProgressDialog("Loading file(s)...","Cancel", 0,filelist.__len__(), self)
+            progress.setWindowTitle("Wait")
+            progress.setWindowModality(QtCore.Qt.WindowModal)
+            progress.setMinimumDuration(1500)
+            ifile=0;
+        
+        
         for filename in filelist:
+            if showprogress:
+                if progress.wasCanceled():
+                    break
+                progress.setValue(ifile)
+                ifile+=1
+
             filename=unicode(filename)
 #            try:
             if filename.endswith(".ddx"):
@@ -11111,6 +11181,9 @@ class ARIADNE(QtGui.QMainWindow):
                 self.UpdateCurrentFile(filename)
 #            except:
 #                print "Error loading file: {0}".format(filename)
+        if showprogress:
+            progress.setValue(filelist.__len__())
+            progress.deleteLater()
         if SilentMode:    
             return Neurons, SelObj, editPosition, dataset
         else:
@@ -11118,9 +11191,15 @@ class ARIADNE(QtGui.QMainWindow):
                 if not self.CurrentDataset[0]==dataset:
                     #check if dataset exists in recent dataset history
                     status=self.ChangeCubeDataset(dataset);
+                    
+                    #dirty hack
+                    if status<1 and dataset=='E085L01':
+                        dataset='wanner16'
+                        status=self.ChangeCubeDataset(dataset);
+                        
                     if status<1:
                         datasetpath=os.path.join(self._DefaultDataPath,dataset)
-                        configfile=os.path.join(datasetpath,"ariadne.conf")    
+                        configfile=os.path.join(datasetpath,"{0}.conf".format(dataset))    
                         if not os.path.isfile(configfile):
                             if os.path.isdir(self._DefaultDataPath):
                                 startpath=self._DefaultDataPath
@@ -11132,7 +11211,7 @@ class ARIADNE(QtGui.QMainWindow):
                             if not (not datasetpath):
                                 if not datasetpath.endswith(dataset):
                                     datasetpath=os.path.join(datasetpath,dataset)                    
-                                configfile=os.path.join(datasetpath,"ariadne.conf")    
+                                configfile=os.path.join(datasetpath,"{0}.conf".format(dataset))    
                         if os.path.isfile(configfile) and not (self.CurrentDataset[1]==configfile):
                             self.ChangeCubeDataset(configfile)
             
@@ -11359,7 +11438,7 @@ class ARIADNE(QtGui.QMainWindow):
                 elif self.comboBox_AutoSave.currentIndex()==2 and not (usermode==1):
                     self.SaveNMLFile(newfile,Neuron,True)
                 else: #default
-                    self.SaveNMLFile(newfile,Neuron)
+                    self.SaveNMLFile(newfile,Neuron,True)
             elif newfile.endswith(".nmx"):
                 self.SaveNMXFile(newfile,Neuron)
             else:
@@ -11503,7 +11582,7 @@ class ARIADNE(QtGui.QMainWindow):
         
     def HideSomaLabels(self,state=None,silent=0):
         if state==None:
-            state=self.cbx_HideSomaLabels.isChecked()
+            state=self.ckbx_HideSomaLabels.isChecked()
         for iitem in range(soma.labelactor.GetNumberOfItems()):
             labelactor=soma.labelactor.GetItemAsObject(iitem);  
             actorVisibility=labelactor.GetVisibility()
@@ -11518,7 +11597,7 @@ class ARIADNE(QtGui.QMainWindow):
             
     def HideRegionLabels(self,state=None,silent=0):
         if state==None:
-            state=self.cbx_HideRegionLabels.isChecked()
+            state=self.ckbx_HideRegionLabels.isChecked()
         for iitem in range(region.labelactor.GetNumberOfItems()):
             labelactor=region.labelactor.GetItemAsObject(iitem);  
             actorVisibility=labelactor.GetVisibility()
@@ -11536,7 +11615,7 @@ class ARIADNE(QtGui.QMainWindow):
             alpha=self.SomaAlpha.value()
         soma.DefaultAlpha[0]=alpha
         soma.update_VisEngine(alpha)
-        if self.cbx_HideSomaLabels.isChecked():
+        if self.ckbx_HideSomaLabels.isChecked():
             self.HideSomaLabels(1,1)
         else:
             if alpha==0:
@@ -11550,7 +11629,7 @@ class ARIADNE(QtGui.QMainWindow):
             alpha=self.RegionAlpha.value()
         region.DefaultAlpha[0]=alpha
         region.update_VisEngine(alpha)
-        if self.cbx_HideRegionLabels.isChecked():
+        if self.ckbx_HideRegionLabels.isChecked():
             self.HideRegionLabels(1,1)
         else:
             if alpha==0:
@@ -12183,7 +12262,9 @@ class ARIADNE(QtGui.QMainWindow):
                     editPosition=None
             else:
                 editPosition=[int(np.round(CubeLoader.Position[idim]/self.DataScale[idim])) for idim in range(3)]
-            
+        if (not dataset) and not (not Dataset):
+            filename,fileext = os.path.splitext(Dataset)
+            temppath,dataset=os.path.split(filename)
         nmlfile=os.path.join(blockpath,"{0}.nml".format(basename))
         self.SaveNMLFile(nmlfile,Neurons,False,dataset,activeNode,editPosition)
         
@@ -12192,7 +12273,7 @@ class ARIADNE(QtGui.QMainWindow):
         for root, dirs, files in os.walk(blockpath):
             for file in files:
                 zipf.write(os.path.join(root, file),os.path.join(basename,file))
-        if not (Dataset==None):
+        if not (Dataset==None) and self._ckbx_addDataset.isChecked():
             if os.path.isfile(Dataset):
                 temppath,filename=os.path.split(Dataset)
                 zipf.write(Dataset,filename)
@@ -12897,7 +12978,7 @@ class ARIADNE(QtGui.QMainWindow):
 #            neuronId=float(id.replace('id',''))
 #            if not parent in globals():
 #                continue
-            if not parent=='neuron' or parent=='area':
+            if not (parent=='neuron' or parent=='area'):
                 parent='neuron'
             if not objtype in ['skeleton','synapse','soma','tag','region']:
                 for iobjtype in ['skeleton','synapse','soma','tag','region']:
@@ -12965,6 +13046,9 @@ class ARIADNE(QtGui.QMainWindow):
                 activeNode=int(activeNode.get('id'))
             except:
                 activeNode=None
+
+            #have to add node first in order to update soma/region labels properly
+            comments=root.find('comments')
 
             for tree in root.iter('thing'):
                 neuronId=None
@@ -13085,16 +13169,19 @@ class ARIADNE(QtGui.QMainWindow):
                 except:
                     print "No edges found."
 
-            #have to add node first in order to update soma/region labels properly
-            comments=root.find('comments')
-            if not comments==None:
-                for comment in comments.iter('comment'):
-                    if not (comment.attrib.has_key('node') and comment.attrib.has_key('content')):
-                        continue
-                    nodeId=np.int(comment.attrib['node'])
-                    value=unicode(comment.attrib['content'])     
-                    if not value=="":
-                        obj.comments.set(nodeId,'comment',value)
+                #have to add node first in order to update soma/region labels properly
+                if not comments==None:
+                    NodeID=tempData[neuronId][objtype]["NodeID"]
+                    NodeID.ClearLookup()
+                    for comment in comments.iter('comment'):
+                        if not (comment.attrib.has_key('node') and comment.attrib.has_key('content')):
+                            continue
+                        nodeId=np.int(comment.attrib['node'])
+                        if NodeID.LookupValue(nodeId)==-1:
+                            continue
+                        value=unicode(comment.attrib['content'])     
+                        if not value=="":
+                            obj.comments.set(nodeId,'comment',value)
 
         Edges2PolyLines=vtk.vtkStripper()
         tempEdge=vtk.vtkIdList()
@@ -13966,9 +14053,123 @@ class ARIADNE(QtGui.QMainWindow):
         writer.Write()
         return;
 
+    def LoadPlugin(self,uri=None,absl=True): 
+        if not uri:
+            if os.path.isdir(application_path):
+                filelist = QtGui.QFileDialog.getOpenFileNames(self,"Load plugin...",application_path,"*.py;;*.pyc");
+            else:
+                filelist = QtGui.QFileDialog.getOpenFileNames(self,"Load plugin...","","*.py;;*.pyc");
+            if filelist.__len__()==0:
+                return None, None, None
+            uri=unicode(filelist[filelist.__len__()-1])
+        
+        if not absl:
+            uri = os.path.normpath(os.path.join(os.path.dirname(__file__), uri))
+
+        path, fname = os.path.split(uri)
+        mname, ext = os.path.splitext(fname)
+        no_ext = os.path.join(path, mname)
+        if ext=='.pyc' and os.path.exists(no_ext + '.pyc'):
+            try:
+                if mname in sys.modules:
+                    del sys.modules[mname]
+                filename= no_ext + '.pyc'
+                module=imp.load_compiled(mname,filename)
+                plugin=module.init(window1,CubeLoader)
+                return mname,plugin,filename
+            except OSError as err:
+                print("OS error: {0}".format(err))
+                return
+        if ext=='.py' and os.path.exists(no_ext + '.py'):
+            try:
+                if mname in sys.modules:
+                    del sys.modules[mname]
+                filename = no_ext + '.py'
+                module=imp.load_source(mname,filename)
+                plugin=module.init(window1,CubeLoader)
+                return mname,plugin,filename
+            except OSError as err:
+                print("OS error: {0}".format(err))
+                return
+#        if os.path.exists(no_ext + '.pyc'):
+#            try:
+#                if mname in sys.modules:
+#                    del sys.modules[mname]
+#                filename= no_ext + '.pyc'
+#                module=imp.load_compiled(mname,filename)
+#                return mname,module,filename
+#            except:
+#                pass
+#        if os.path.exists(no_ext + '.py'):
+#            try:
+#                if mname in sys.modules:
+#                    del sys.modules[mname]
+#                filename = no_ext + '.py'
+#                module=imp.load_source(mname,filename)
+#                return mname,module,filename
+#            except:
+#                pass
+        return None,None,None
+        
+    def RunPlugin(self,filename=None):
+        if not filename:
+            action = self.sender()
+            if hasattr(action,'_File'):
+                filename=action._File
+        
+        pluginName,plugin,filename=self.LoadPlugin(filename)
+        
+        if not plugin:
+            return -1
+
+        self.Plugins[pluginName]=plugin
+
+        if any([mplugin._File==filename for mplugin in self.menuPluginList]):
+            found=0
+            for iplugin in range(self.menuPluginList.__len__()-1):
+                mplugin=self.menuPluginList[iplugin]
+                if mplugin._File==filename:
+                    found=1
+                if not found:
+                    continue
+                prev_plugin=self.menuPluginList[iplugin+1]            
+                mplugin._Name=prev_plugin._Name
+                mplugin._File=prev_plugin._File
+                text = "&%d %s" % (self.menuPluginList.__len__() - iplugin, mplugin._Name)
+                mplugin.setText(text)
+                mplugin.setVisible(not mplugin._Name=='')
+            mplugin=self.menuPluginList[self.menuPluginList.__len__()-1]
+            mplugin._Name=pluginName
+            mplugin._File=filename
+            text = "&%d %s" % (1, pluginName)
+            mplugin.setText(text)
+            mplugin.setVisible(not pluginName=='')
+        else:
+            for iplugin in range(self.menuPluginList.__len__()-1):
+                mplugin=self.menuPluginList[iplugin]
+                prev_plugin=self.menuPluginList[iplugin+1]
+                mplugin._Name=prev_plugin._Name
+                mplugin._File=prev_plugin._File
+                text = "&%d %s" % (self.menuPluginList.__len__() - iplugin, mplugin._Name)
+                mplugin.setText(text)
+                mplugin.setVisible(not mplugin._Name=='')
+            mplugin=self.menuPluginList[self.menuPluginList.__len__()-1]
+            mplugin._Name=pluginName
+            mplugin._File=filename
+            text = "&%d %s" % (1, pluginName)
+            mplugin.setText(text)
+            mplugin.setVisible(not pluginName=='')
+        
+        window1.SetupGUIState(self.Plugins[pluginName])
+        myconfig.LoadConfig(self.Plugins[pluginName],pluginName)
+        print "Loaded plugin: ", pluginName
+        plugin.runPlugin()
+        return 1
+
 class ObjectBrowser(QtGui.QTreeView):
-    def __init__(self, parent=None):
-        super(ObjectBrowser, self).__init__(parent)
+    def __init__(self, parent=None, *args):
+#        super(ObjectBrowser, self).__init__(parent)
+        QtGui.QTreeView.__init__(parent,*args)
 
         TreeModel=QtGui.QStandardItemModel(self)
         self.setModel(TreeModel)        
@@ -13980,14 +14181,6 @@ class ObjectBrowser(QtGui.QTreeView):
 
         self.show()
         self.setEditTriggers(QtGui.QAbstractItemView.NoEditTriggers)
-
-    def focusInEvent(self, event):
-        if (self.width()==self.parent().width() and \
-            self.height()==self.parent().height()):
-            return
-        self.resize(self.parent().width(),self.parent().height())
-        print "focusin"
-        
     
     def contextMenuEvent(self, event):
         self.menu = QtGui.QMenu(self)
@@ -14035,7 +14228,9 @@ class ObjectBrowser(QtGui.QTreeView):
         if not color.isValid():
             return
         color=np.array(color.getRgb())/255.00
-        obj.change_color([color[0],color[1],color[2],1.0])
+        color[3]=1.0
+        obj.change_color([color[0],color[1],color[2],color[3]])
+        return color
 
 class label_class:
     _Name=""
@@ -14497,16 +14692,13 @@ if __name__ == "__main__":
         sys.exit()
     
     
-    if showconsole:
-        CubeLoader=Loader(doload,0)
-    else:
-        CubeLoader=Loader(doload,mprocess)
+    CubeLoader=Loader(doload,mprocess)
 
     window1 = ARIADNE(os.path.join(application_path,"gui4.ui"))
         
     window1.Neurons=OrderedDict()
     window1.setup_visualization()
-    window1.SetupGUIState()
+    window1.SetupGUIState(window1)
 
     window1.ToggleClipHulls('skeleton_viewport')    
     
@@ -14523,10 +14715,10 @@ if __name__ == "__main__":
 #        1
 
     #Reserve memory
-    NCubesPerEdge=window1.SpinBox_CubesPerEdge.value()
-    if NCubesPerEdge>maxNCubesPerEdge:
-        NCubesPerEdge=maxNCubesPerEdge;
-    window1.SpinBox_CubesPerEdge.setMaximum(maxNCubesPerEdge)        
+    NCubesPerEdge=int(window1.SpinBox_CubesPerEdge.value())
+    NPixels=CubeLoader._CubeSize[0]*CubeLoader._CubeSize[1]*CubeLoader._CubeSize[2];
+    maxNCubesPerEdge=np.floor((float(maxContRAMBlock)/float(NPixels))**(1.0/3.0))
+    window1.SpinBox_CubesPerEdge.setMaximum(maxNCubesPerEdge)
     window1.SpinBox_CubesPerEdge.setValue(maxNCubesPerEdge)
     CubeLoader.LoadDatasetInformation(None)
     CubeLoader.LoadDataset()
@@ -14581,12 +14773,12 @@ if __name__ == "__main__":
         window1.ckbx_HideLabelsDataVP.setChecked(True)
         window1.ckbx_HideLabelsDataVP.setVisible(False)
 
-        window1.cbx_HideRegionLabels.setEnabled(False)
-        window1.cbx_HideRegionLabels.setChecked(True)
-        window1.cbx_HideRegionLabels.setVisible(False)
-        window1.cbx_HideSomaLabels.setEnabled(False)
-        window1.cbx_HideSomaLabels.setChecked(True)
-        window1.cbx_HideSomaLabels.setVisible(False)
+        window1.ckbx_HideRegionLabels.setEnabled(False)
+        window1.ckbx_HideRegionLabels.setChecked(True)
+        window1.ckbx_HideRegionLabels.setVisible(False)
+        window1.ckbx_HideSomaLabels.setEnabled(False)
+        window1.ckbx_HideSomaLabels.setChecked(True)
+        window1.ckbx_HideSomaLabels.setVisible(False)
         
         window1.ckbx_restrictVOI.setEnabled(False)
         window1.ckbx_restrictVOI.setChecked(False)
@@ -14596,7 +14788,7 @@ if __name__ == "__main__":
         window1.VOIlabel1.setVisible(False)
         window1.VOIlabel2.setVisible(False)
         
-        for checkbox in [window1.cbkx_ShowArbitScaleBar,window1.cbkx_ShowYXScaleBar,window1.cbkx_ShowYZScaleBar,window1.cbkx_ShowZXScaleBar]:
+        for checkbox in [window1.ckbx_ShowArbitScaleBar,window1.ckbx_ShowYXScaleBar,window1.ckbx_ShowYZScaleBar,window1.ckbx_ShowZXScaleBar]:
             checkbox.setChecked(False)                
         window1.group_ScaleBar.setVisible(False)
         
@@ -14606,7 +14798,6 @@ if __name__ == "__main__":
     #to fill the settings tab widget.
     currWidget=window1.SettingsTab.currentWidget()
     window1.SettingsTab.setCurrentWidget(window1.ObjBrowserTab)
-    window1.ObjectBrowser.focusInEvent(None)
     window1.SettingsTab.setCurrentWidget(currWidget)
     
     #jump to previous location as saved in config file

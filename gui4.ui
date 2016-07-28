@@ -591,7 +591,7 @@
              <number>20</number>
             </property>
            </widget>
-           <widget class="QCheckBox" name="cbx_HideSomaLabels">
+           <widget class="QCheckBox" name="ckbx_HideSomaLabels">
             <property name="geometry">
              <rect>
               <x>10</x>
@@ -656,7 +656,7 @@
              <number>20</number>
             </property>
            </widget>
-           <widget class="QCheckBox" name="cbx_HideRegionLabels">
+           <widget class="QCheckBox" name="ckbx_HideRegionLabels">
             <property name="geometry">
              <rect>
               <x>10</x>
@@ -858,7 +858,7 @@
            </rect>
           </property>
           <property name="currentIndex">
-           <number>0</number>
+           <number>2</number>
           </property>
           <widget class="QWidget" name="tab">
            <attribute name="title">
@@ -1201,7 +1201,7 @@
             <property name="title">
              <string>Hide planes</string>
             </property>
-            <widget class="QCheckBox" name="cbkx_HideYXplane">
+            <widget class="QCheckBox" name="ckbx_HideYXplane">
              <property name="geometry">
               <rect>
                <x>10</x>
@@ -1214,7 +1214,7 @@
               <string>YX</string>
              </property>
             </widget>
-            <widget class="QCheckBox" name="cbkx_HideYZplane">
+            <widget class="QCheckBox" name="ckbx_HideYZplane">
              <property name="geometry">
               <rect>
                <x>10</x>
@@ -1227,7 +1227,7 @@
               <string>YZ</string>
              </property>
             </widget>
-            <widget class="QCheckBox" name="cbkx_HideZXplane">
+            <widget class="QCheckBox" name="ckbx_HideZXplane">
              <property name="geometry">
               <rect>
                <x>72</x>
@@ -1240,7 +1240,7 @@
               <string>ZX</string>
              </property>
             </widget>
-            <widget class="QCheckBox" name="cbkx_Hidearbitplane">
+            <widget class="QCheckBox" name="ckbx_Hidearbitplane">
              <property name="geometry">
               <rect>
                <x>72</x>
@@ -1314,7 +1314,7 @@
               <string>um</string>
              </property>
             </widget>
-            <widget class="QCheckBox" name="cbkx_ShowArbitScaleBar">
+            <widget class="QCheckBox" name="ckbx_ShowArbitScaleBar">
              <property name="geometry">
               <rect>
                <x>190</x>
@@ -1327,7 +1327,7 @@
               <string>arbit.</string>
              </property>
             </widget>
-            <widget class="QCheckBox" name="cbkx_ShowZXScaleBar">
+            <widget class="QCheckBox" name="ckbx_ShowZXScaleBar">
              <property name="geometry">
               <rect>
                <x>70</x>
@@ -1340,7 +1340,7 @@
               <string>ZX</string>
              </property>
             </widget>
-            <widget class="QCheckBox" name="cbkx_ShowYXScaleBar">
+            <widget class="QCheckBox" name="ckbx_ShowYXScaleBar">
              <property name="geometry">
               <rect>
                <x>10</x>
@@ -1353,7 +1353,7 @@
               <string>YX</string>
              </property>
             </widget>
-            <widget class="QCheckBox" name="cbkx_ShowYZScaleBar">
+            <widget class="QCheckBox" name="ckbx_ShowYZScaleBar">
              <property name="geometry">
               <rect>
                <x>130</x>
@@ -1468,7 +1468,7 @@
            <number>1</number>
           </property>
           <property name="maximum">
-           <number>20</number>
+           <number>1000</number>
           </property>
           <property name="value">
            <number>5</number>
@@ -2634,6 +2634,14 @@
         <addaction name="ActionSaveActiveNeuron"/>
         <addaction name="ActionExportSynapses"/>
        </widget>
+       <widget class="QMenu" name="CubeQueue">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="title">
+         <string>0 cubes in the queue</string>
+        </property>
+       </widget>
        <widget class="QMenu" name="menuDataset">
         <property name="title">
          <string>Dataset</string>
@@ -2643,16 +2651,15 @@
         <addaction name="separator"/>
         <addaction name="ActionWorkingOffline"/>
        </widget>
-       <widget class="QMenu" name="CubeQueue">
-        <property name="enabled">
-         <bool>false</bool>
-        </property>
+       <widget class="QMenu" name="menuPlugins">
         <property name="title">
-         <string>0 cubes in the queue</string>
+         <string>Plugins</string>
         </property>
+        <addaction name="ActionLoadPlugin"/>
        </widget>
        <addaction name="File"/>
        <addaction name="menuDataset"/>
+       <addaction name="menuPlugins"/>
        <addaction name="CubeQueue"/>
       </widget>
      </item>
@@ -4545,6 +4552,11 @@
   <action name="actionCubes_per_edge">
    <property name="text">
     <string>cubes per edge</string>
+   </property>
+  </action>
+  <action name="ActionLoadPlugin">
+   <property name="text">
+    <string>Load plugin</string>
    </property>
   </action>
  </widget>

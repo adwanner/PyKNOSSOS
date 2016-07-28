@@ -1,4 +1,4 @@
-/*gcc -I/usr/include/libpng12 loaderlib.c readpng.c -lcurl -O3 -fPIC -shared -o clibraries/loaderlib.so*/
+/*gcc -I/usr/include/libpng12 loaderlib.c readpng.c streamcube.h -lcurl -O3 -fPIC -shared -o clibraries/loaderlib.so*/
 
 //FMI: /*i586-mingw32msvc-gcc -I/usr/local/i586-mingw32msvc/include -L/usr/local/i586-mingw32msvc/lib loaderlib.c readpng.c -O3 -shared -o clibraries/loaderlib.dll -lcurl -lpng -lz*/
 //i586-mingw32msvc-gcc -O3 -shared -o clibraries/loaderlib.dll -DCURL_STATICLIB loaderlib.c readpng.c streamcube.h -lpthreadGC2 -lpng -lz -ljpeg -lcurl -lwldap32 -lz -lws2_32
@@ -33,7 +33,7 @@ int *NCubesPerEdge, NCubes, CumNCubes[4];
 int prevCoord[3];
 unsigned int PrevMag, CompletedLoading;
 
-int *ForceLoading;
+int *LoaderState;
 
 int *Mag, *NMag, NMags2Load=3;
 unsigned int *LoadingStrategy;
@@ -59,6 +59,7 @@ unsigned int Priority[3+3+1];
 unsigned int cachepos;
 
 unsigned int LoadingMode=0, ServerFormat;
+int *CubeSize, NPixelsPerCube;
 
 float *Dist2Center;
 
@@ -120,7 +121,7 @@ static void *pull_cube(void* userp){
 			//printf("found: %d, cube2load: %d, cube2stream: %d\n",found,*(Cubes2Load+icube),Cube2Stream->CubeID);
 			//if (*OfflineMode==1){printf("Working offline.\n");}
 			if ((ServerFormat>0) && (BaseURL!=NULL) && (found==1) && (*OfflineMode==0)){
-				streamstate=StreamCube((void *)&CubeStream,ServerFormat,BaseURL,BaseName,BaseExt,UserName,Password,Cube2Stream->mag,Cube2Stream->x,Cube2Stream->y,Cube2Stream->z);
+				streamstate=StreamCube((void *)&CubeStream,ServerFormat,BaseURL,BaseName,BaseExt,UserName,Password,Cube2Stream->mag,Cube2Stream->x,Cube2Stream->y,Cube2Stream->z,CubeSize);
 				if (streamstate==1){
 					WriteCube( (void *)&CubeStream,BasePath,BaseName,BaseExt,Cube2Stream->mag,Cube2Stream->x,Cube2Stream->y,Cube2Stream->z);
 					*(MagOffset[Cube2Stream->mag-1]+Cube2Stream->CubeID)=(short int)-1;
@@ -404,7 +405,7 @@ int LoadCubesFromList(unsigned int icube, unsigned int icubeEnd){
 		
 		for (imag=0;imag<3;imag++){
 			if (cachepos<CumNCubes[imag+1]){
-				CachePosition=(HyperCube[imag]+(cachepos-CumNCubes[imag])*2097152);
+				CachePosition=(HyperCube[imag]+(cachepos-CumNCubes[imag])*NPixelsPerCube);
 				break;
 			}
 		}
@@ -441,8 +442,8 @@ int LoadCubesFromList(unsigned int icube, unsigned int icubeEnd){
 			/*printf("Loading cube: %s\n",CubeFileName);*/
 			switch (LoadingMode){
 				case 0:/*Raw image cubes*/
-					bytes_read=fread(CachePosition,sizeof(unsigned char),2097152,fid);
-					if (bytes_read != 2097152) {
+					bytes_read=fread(CachePosition,sizeof(unsigned char),NPixelsPerCube,fid);
+					if (bytes_read != NPixelsPerCube) {
 						error=1;
 						printf("Read %zu bytes. Reading error for: %s\n",bytes_read,CubeFileName);
 					}
@@ -453,7 +454,7 @@ int LoadCubesFromList(unsigned int icube, unsigned int icubeEnd){
 						printf("Error: Invalid PNG file: %s\n",CubeFileName);
 					}
 					else{
-						if (image_width*image_height!=2097152){
+						if (image_width*image_height!=NPixelsPerCube){
 							error=1;
 							printf("Error: Invalid PNG image size: %s\n",CubeFileName);
 						}
@@ -469,7 +470,7 @@ int LoadCubesFromList(unsigned int icube, unsigned int icubeEnd){
 						printf("Error: Invalid PNG file: %s\n",CubeFileName);
 					}
 					else{
-						if (image_width*image_height!=2097152){
+						if (image_width*image_height!=NPixelsPerCube){
 							error=1;
 							printf("Error: Invalid PNG image size: %s\n",CubeFileName);
 						}
@@ -513,7 +514,7 @@ int LoadCubesFromList(unsigned int icube, unsigned int icubeEnd){
 					/* Step 5: Start decompressor */
 					(void) jpeg_start_decompress(&cinfo);
 
-					if (cinfo.output_width*cinfo.output_height!=2097152){
+					if (cinfo.output_width*cinfo.output_height!=NPixelsPerCube){
 						error=1;
 						printf("Error: Invalid JPG image size: %s, size: %i\n",CubeFileName,cinfo.output_width*cinfo.output_height);
 						jpeg_destroy_decompress(&cinfo);
@@ -655,11 +656,11 @@ int load_cubes(){
 		}
 		halfEdge=(unsigned int)ceil(((float)(NCubesPerEdge[imag]))/2.0)-1;
 		for (idim=0;idim<3;idim++){
-			start_cube[imag*3+idim]=(int)(floor((CurrCoord[idim]/DataScale[(whichMag[imag]-1)*3+idim]-1)/128.0)-halfEdge);
+			start_cube[imag*3+idim]=(int)(floor((CurrCoord[idim]/DataScale[(whichMag[imag]-1)*3+idim]-1)/((float)CubeSize[idim]))-halfEdge);
 		}
 	}
 	
-	if (*ForceLoading<2 && CompletedLoading && (prevCoord[0]==start_cube[0]) && (prevCoord[1]==start_cube[1]) && (prevCoord[2]==start_cube[2]) && (PrevMag==whichMag[0])){
+	if (*LoaderState<2 && CompletedLoading && (prevCoord[0]==start_cube[0]) && (prevCoord[1]==start_cube[1]) && (prevCoord[2]==start_cube[2]) && (PrevMag==whichMag[0])){
 		return CompletedLoading;
 	}
 
@@ -716,7 +717,7 @@ int load_cubes(){
 	icube=0; 
 	halfEdge=(unsigned int)ceil(((float)(NCubesPerEdge[0]))/2.0)-1;
 	while (icube<Cubes2LoadIdx){
-		if (*ForceLoading==0){
+		if (*LoaderState==0){
 			return CompletedLoading;
 		}	
 		if (PrevMag!=(unsigned int)(*Mag)){
@@ -725,7 +726,7 @@ int load_cubes(){
 			return CompletedLoading;
 		}
 		for (idim=0;idim<3;idim++){
-			if (start_cube[idim]!=(int)(floor((CurrCoord[idim]/DataScale[(whichMag[0]-1)*3+idim]-1)/128.0)-halfEdge)){
+			if (start_cube[idim]!=(int)(floor((CurrCoord[idim]/DataScale[(whichMag[0]-1)*3+idim]-1)/((float)CubeSize[idim]))-halfEdge)){
 				//printf("Coordinates have been updated...\n");
 				load_cubes();
 				return CompletedLoading;
@@ -798,6 +799,7 @@ int release_loader(void){
 	BaseExt=NULL;
 	NMag=NULL;
 	DataScale=NULL;
+	CubeSize=NULL;
 	NCubesPerEdge=NULL;
 	NumberofCubes=NULL;
 	Mag=NULL;
@@ -806,13 +808,13 @@ int release_loader(void){
 	UserName=NULL;
 	Password=NULL;
 
-	ForceLoading=NULL;
+	LoaderState=NULL;
 	initialized=0;
 	return 1;
 }
 
-int init_loader(float* currCoord,unsigned char* hyperCube0,unsigned char* hyperCube1,unsigned char* hyperCube2,short int* allCubes,int* nCubesPerEdge,const char* basePath,const char* baseName,char* baseExt, int* nMag, float* dataScale,int* numberofCubes,int* magnification,int* loadingMode,
-const char* baseURL,const char* userName,const char* password, int* serverFormat,int*nThreads, int* offlineMode, int* nCubes2Load, int* forceLoading){
+int init_loader(float* currCoord,unsigned char* hyperCube0,unsigned char* hyperCube1,unsigned char* hyperCube2,short int* allCubes,int* nCubesPerEdge,const char* basePath,const char* baseName,char* baseExt, int* nMag, float* dataScale,int* cubeSize,int* numberofCubes,int* magnification,int* loadingMode,
+const char* baseURL,const char* userName,const char* password, int* serverFormat,int*nThreads, int* offlineMode, int* nCubes2Load, int* loaderState){
 
   int idim,imag, pos, ithread, error;
 	if (initialized==1){
@@ -820,6 +822,7 @@ const char* baseURL,const char* userName,const char* password, int* serverFormat
 	}
 
 	/* Assign input parameters*/
+	CubeSize=cubeSize;
 	NCubesPerEdge=nCubesPerEdge;
 	BasePath=basePath;
 	BaseName=baseName;
@@ -838,6 +841,7 @@ const char* baseURL,const char* userName,const char* password, int* serverFormat
 	OfflineMode=offlineMode;
 
 	NCubes2Load=nCubes2Load;
+	NPixelsPerCube=CubeSize[0]*CubeSize[1]*CubeSize[2];
 
 
 	if ((ServerFormat>0) && (BaseURL!=NULL)){
@@ -853,12 +857,12 @@ const char* baseURL,const char* userName,const char* password, int* serverFormat
 	Cube2Stream=(struct CubeIdentifier*)calloc(NThreads,sizeof(struct CubeIdentifier)); 
 	if (Cube2Stream==NULL){printf("Could not allocate memory for Cube2Stream.\n");return -1;}
 
-	ForceLoading=forceLoading;
+	LoaderState=loaderState;
 
 	LoadingMode=(unsigned int) *loadingMode;
 	printf("Started loader with the following parameters:\n");
 	printf("BasePath: %s, BaseName: %s\n",BasePath,BaseName);
-	printf("CubeSize: (%i,%i,%i), NCubesPerEdge: (%i,%i,%i), currCoord: (%f,%f,%f)\n",128,128,128,\
+	printf("CubeSize: (%i,%i,%i), NCubesPerEdge: (%i,%i,%i), currCoord: (%f,%f,%f)\n",CubeSize[0],CubeSize[1],CubeSize[2],\
 		NCubesPerEdge[0],NCubesPerEdge[1],NCubesPerEdge[2],currCoord[0],currCoord[1],currCoord[2]);
 
 	
