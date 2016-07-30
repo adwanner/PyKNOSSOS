@@ -29,7 +29,7 @@ experimental=1 #show experimental features
 encryptionkey='EncryptPyKnossos';
 #AES key must be either 16, 24, or 32 bytes long
 
-PyKNOSSOS_VERSION='PyKNOSSOS1.220160727'
+PyKNOSSOS_VERSION='PyKNOSSOS2.120160727'
 
 if usermode==1:
     experimental=0
