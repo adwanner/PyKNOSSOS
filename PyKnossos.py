@@ -1,8 +1,17 @@
+#PyKnossos has successfully been tested with Python 2.7
 
+#PyKnossos requires the following extension packages/modules:
+#ast, collections, configobj, Crypto.Cipher, cStringIO, ctypes, fnmatch, glob, 
+#images2gif, imp, inspect, itertools, lxml, multiprocessing, numpy, os, PIL, 
+#PyQt4, QxtSpanSlider, random, re, scipy, shutil, sip, struct, threading, 
+#time, uuid, vtk, zipfile
 
-#Non-standard dependencies of PyKNOSSOS:
+#Non-standard extension packages/modules of PyKNOSSOS:
 #QxtSpanSlider.py https://github.com/mkilling/QxtSpanSlider.py
 #images2gif https://bitbucket.org/bench/images2gif.py 
+
+#For Windows, many Python extension packages can easily be installed using the
+# binaries provided here: http://www.lfd.uci.edu/~gohlke/pythonlibs/
 
 #This has been used successfully with the following PyQt4 versions 
 #Qt version:   4.8.6  (windows and linux)
@@ -225,6 +234,8 @@ else:
     win=0
     
 print "application path: " + application_path
+
+sys.path.append(os.path.join(application_path,'plugin'));
 
 maxNStreamingChannels=50;
 if win:
