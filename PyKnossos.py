@@ -878,7 +878,7 @@ class Dataset:
 
 class Loader:
     filename=None
-    _NCubesPerEdge=(5,5,5)
+    _NCubesPerEdge=[5,5,5]
     _NStreamingChannels=5;
     _CubeSize=(128,128,128)
     _NumberofCubes=(120,120,120)
@@ -920,7 +920,7 @@ class Loader:
         if NCubesPerEdge<1:
             NCubesPerEdge=1;
             window1.SpinBox_CubesPerEdge.setValue(NCubesPerEdge)
-        self._NCubesPerEdge=(NCubesPerEdge,NCubesPerEdge,NCubesPerEdge)
+        self._NCubesPerEdge=[NCubesPerEdge,NCubesPerEdge,NCubesPerEdge]
         
         NStreamingChannels=int(window1.SpinBox_StreamingSlots.value())
         if NStreamingChannels>maxNStreamingChannels:
@@ -933,6 +933,7 @@ class Loader:
         self._NStreamingChannels=NStreamingChannels
         
         if not filename:
+            print "No dataset specified."
             return None
         if not os.path.isfile(filename):
             print "Error: dataset file {0} not found.".format(filename)
@@ -971,7 +972,7 @@ class Loader:
         if NCubesPerEdge<1:
             NCubesPerEdge=1;
             window1.SpinBox_CubesPerEdge.setValue(NCubesPerEdge)
-        self._NCubesPerEdge=(NCubesPerEdge,NCubesPerEdge,NCubesPerEdge)
+        self._NCubesPerEdge=[NCubesPerEdge,NCubesPerEdge,NCubesPerEdge]
 
         return self._BaseName
    
@@ -1066,14 +1067,17 @@ class Loader:
             while (self.LoaderProcess.is_alive() and self.LoaderState[0]<1 and step<100):
                 step+=1
                 print "...loader state: ", self.LoaderState[0]
-                if self.LoaderState[0]==5:
-                    if self.LoaderProcess.is_alive():
-                        print "...loader alive..."
-                        self.LoaderProcess.join(0.25)
-                        print "...joined..."
-                    self.LoaderState[0]==1
 #                time.sleep(0.05)
                 time.sleep(0.1)
+            if self.LoaderState[0]==5:
+                if self.LoaderProcess.is_alive():
+                    self.LoaderState[0]=1
+                    print "...loader alive..."
+                    self.LoaderProcess.join(0.25)
+                    print "...joined..."
+                else:
+                    self.LoaderState[0]=-1
+                    print "...loader is dead."
             if self.LoaderState[0]>0 and self.LoaderProcess.is_alive():
                 self.LoaderProcess.join(0.1)
                 print "Loader process successfully initialized."
@@ -1107,7 +1111,6 @@ class Loader:
 #            self.LoaderState[0]=int(0)
         self.ROIState=Value('i',0)
 
-        self.NCubesPerEdge=RawArray(c_int,self._NCubesPerEdge[:])
         self.NStreamingChannels=RawArray(c_int,[self._NStreamingChannels])
 
         if win:
@@ -1145,12 +1148,64 @@ class Loader:
             self.Position=RawArray(c_float,(1000.0,1000.0,1000.0))
         
         NPixels=(self._CubeSize[0]*self._CubeSize[1]*self._CubeSize[2])
-        if not hasattr(self,'HyperCube0'):
-            self.HyperCube0=RawArray(c_ubyte,(self._NCubesPerEdge[0]**3)*NPixels)
-        if not hasattr(self,'HyperCube1'):
-            self.HyperCube1=RawArray(c_ubyte,(self._NCubesPerEdge[1]**3)*NPixels)
-        if not hasattr(self,'HyperCube2'):
-            self.HyperCube2=RawArray(c_ubyte,(self._NCubesPerEdge[2]**3)*NPixels)
+        allocated=0
+        for NCubesPerEdge in range(self._NCubesPerEdge[0],0,-1):        
+            try:
+                if not hasattr(self,'HyperCube0'):
+                    self.HyperCube0=RawArray(c_ubyte,(NCubesPerEdge**3)*NPixels)
+                else:
+                    if sizeof(c_ubyte)*(NCubesPerEdge**3)*NPixels>sizeof(self.HyperCube0):
+                        resize(self.HyperCube0,sizeof(c_ubyte)*(NCubesPerEdge**3)*NPixels)
+                self._NCubesPerEdge[0]=NCubesPerEdge    
+                print('Allocated memory for {0} cubes per edge for magnification level i'.format(NCubesPerEdge))
+                allocated+=1
+                break;
+            except:
+                print('Not enough continuous memory to allocate {0} cubes per edge for magnification level i'.format(NCubesPerEdge))
+
+        if not allocated==1:
+            print('Error: Could not allocate memory for magnification level i.')
+            self._NCubesPerEdge[0]=0
+                
+        for NCubesPerEdge in range(self._NCubesPerEdge[1],0,-1):        
+            try:
+                if not hasattr(self,'HyperCube1'):
+                    self.HyperCube1=RawArray(c_ubyte,(NCubesPerEdge**3)*NPixels)
+                else:
+                    if sizeof(c_ubyte)*(NCubesPerEdge**3)*NPixels>sizeof(self.HyperCube1):
+                        resize(self.HyperCube1,sizeof(c_ubyte)*(NCubesPerEdge**3)*NPixels)
+                self._NCubesPerEdge[1]=NCubesPerEdge    
+                print('Allocated memory for {0} cubes per edge for magnification level i+1'.format(NCubesPerEdge))
+                allocated+=1
+                break;
+            except:
+                print('Not enough continuous memory to allocate {0} cubes per edge for magnification level i+1'.format(NCubesPerEdge))
+                2
+        if not allocated==2:
+            print('Error: Could not allocate memory for magnification level i+1.')
+            self._NCubesPerEdge[1]=0
+
+        for NCubesPerEdge in range(self._NCubesPerEdge[2],0,-1):        
+            try:
+                if not hasattr(self,'HyperCube2'):
+                    self.HyperCube2=RawArray(c_ubyte,(NCubesPerEdge**3)*NPixels)
+                else:
+                    if sizeof(c_ubyte)*(NCubesPerEdge**3)*NPixels>sizeof(self.HyperCube2):
+                        resize(self.HyperCube2,sizeof(c_ubyte)*(NCubesPerEdge**3)*NPixels)
+                self._NCubesPerEdge[2]=NCubesPerEdge    
+                print('Allocated memory for {0} cubes per edge for magnification level i-1'.format(NCubesPerEdge))
+                allocated+=1
+                break;
+            except:
+                print('Not enough continuous memory to allocate {0} cubes per edge for magnification level i-1'.format(NCubesPerEdge))
+
+        if not allocated==3:
+            print('Error: Could not allocate memory for magnification level i-1.')
+            self._NCubesPerEdge[2]=0
+            
+            
+        self.NCubesPerEdge=RawArray(c_int,self._NCubesPerEdge[:])
+            
         totalNCubes=0;
         for imag in range(NMags):
             totalNCubes+=self._NumberofCubes[imag*3+0]*self._NumberofCubes[imag*3+1]*self._NumberofCubes[imag*3+2]
@@ -1182,7 +1237,7 @@ class Loader:
         print "LoaderState: ",  LoaderState[0]
         
         if LoaderState[0]==0:
-            print "Start loader..."            
+            print "Initialize Loader..."   
             loaderlib.init_loader(Position,HyperCube0,HyperCube1,HyperCube2,AllCubes,\
                 NCubesPerEdge,BasePath,BaseName,BaseExt,NMags,DataScale,CubeSize,NumberofCubes,Magnification,\
                 FileType,BaseURL,UserName,Password,ServerFormat,NStreamingChannels,\
@@ -1190,6 +1245,7 @@ class Loader:
         LoaderState[0]=5
         step=0;
         while LoaderState[0]==5 and step<100:
+            print "waiting for PyKnossos"
             step+=1;
             time.sleep(0.1)
         print "LoaderState: ",  LoaderState[0]
@@ -4802,6 +4858,8 @@ class objs():
 
         for key, child in self.children.iteritems():
             child.set_new_neuronId(neuronId)
+        if not hasattr(self.ariadne,'Neurons'):
+            return            
         if oldNeuronID in self.ariadne.Neurons:
             if (self == self.ariadne.Neurons[oldNeuronID]) and (not neuronId in self.ariadne.Neurons):
                 self.ariadne.Neurons[neuronId]=self
@@ -14674,6 +14732,7 @@ if __name__ == "__main__":
     # On Windows calling this function is necessary.
     if win:
         multiprocessing.freeze_support()
+        print "activated freeze_support"
  #   resultQueue = multiprocessing.Queue()
   #  SendeventProcess(resultQueue)
 

@@ -815,8 +815,7 @@ int release_loader(void){
 
 int init_loader(float* currCoord,unsigned char* hyperCube0,unsigned char* hyperCube1,unsigned char* hyperCube2,short int* allCubes,int* nCubesPerEdge,const char* basePath,const char* baseName,char* baseExt, int* nMag, float* dataScale,int* cubeSize,int* numberofCubes,int* magnification,int* loadingMode,
 const char* baseURL,const char* userName,const char* password, int* serverFormat,int*nThreads, int* offlineMode, int* nCubes2Load, int* loaderState){
-
-  int idim,imag, pos, ithread, error;
+	int idim,imag, pos, ithread, error;
 	if (initialized==1){
 		release_loader();
 	}
@@ -862,6 +861,7 @@ const char* baseURL,const char* userName,const char* password, int* serverFormat
 	LoadingMode=(unsigned int) *loadingMode;
 	printf("Started loader with the following parameters:\n");
 	printf("BasePath: %s, BaseName: %s\n",BasePath,BaseName);
+	printf("BaseURL: %s, ServerFormat: %d\n",BaseURL,ServerFormat);
 	printf("CubeSize: (%i,%i,%i), NCubesPerEdge: (%i,%i,%i), currCoord: (%f,%f,%f)\n",CubeSize[0],CubeSize[1],CubeSize[2],\
 		NCubesPerEdge[0],NCubesPerEdge[1],NCubesPerEdge[2],currCoord[0],currCoord[1],currCoord[2]);
 
