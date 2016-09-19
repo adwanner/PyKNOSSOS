@@ -29,7 +29,7 @@ experimental=1 #show experimental features
 encryptionkey='EncryptPyKnossos';
 #AES key must be either 16, 24, or 32 bytes long
 
-PyKNOSSOS_VERSION='PyKNOSSOS2.120160727'
+PyKNOSSOS_VERSION='PyKNOSSOS2.120160918'
 
 if usermode==1:
     experimental=0
@@ -5874,14 +5874,15 @@ class neuron(objs):
         
         self.initialized[0]=True
 
-    def activity2alpha(self,activity):
-        alpha=5;
-        minAlpha=0.0;
-        offset=0;
-        amplitude=6.0;
+    def activity2alpha(self,activity,\
+        alpha=5.0,minAlpha=0.0,offset=0.0,amplitude=6.0):
         newAlpha= np.min([1.0,np.max([minAlpha,amplitude*(1.0+np.sign(activity)*(\
         (np.exp(alpha*np.min([1.0,np.abs(activity)+offset]))-1.0)/(np.exp(alpha)-1.0))-1.0)])]);        
-        self.set_alpha(newAlpha);
+        if newAlpha<=minAlpha:
+            self.set_visibility(0)
+        else:
+            self.set_visibility(1)
+            self.set_alpha(newAlpha);
 
 class area(neuron):
     objtype="area"
@@ -13328,7 +13329,10 @@ class ARIADNE(QtGui.QMainWindow):
         for ineuron in range(Data.size):
             tempData=Data[ineuron]
             #NeuronID=np.round(tempData.Attributes.id.astype('float'),3)
-            NeuronID=float(np.round(float(tempData.Attributes.id),3))
+            try:
+                NeuronID=float(np.round(float(tempData.Attributes.id),3))
+            except:
+                NeuronID=float(np.round(tempData.Attributes.id.astype('float'),3))
             oldNeuronID=NeuronID
             step=1
             while self.Neurons.has_key(NeuronID):
