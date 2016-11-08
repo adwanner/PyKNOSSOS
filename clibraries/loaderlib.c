@@ -1,7 +1,8 @@
 /*gcc -I/usr/include/libpng12 loaderlib.c readpng.c streamcube.h -lcurl -O3 -fPIC -shared -o clibraries/loaderlib.so*/
 
 //FMI: /*i586-mingw32msvc-gcc -I/usr/local/i586-mingw32msvc/include -L/usr/local/i586-mingw32msvc/lib loaderlib.c readpng.c -O3 -shared -o clibraries/loaderlib.dll -lcurl -lpng -lz*/
-//i586-mingw32msvc-gcc -O3 -shared -o clibraries/loaderlib.dll -DCURL_STATICLIB loaderlib.c readpng.c streamcube.h -lpthreadGC2 -lpng -lz -ljpeg -lcurl -lwldap32 -lz -lws2_32
+//i586-mingw32msvc-gcc -O3 -shared -o clibraries/loaderlib.dll -DCURL_STATICLIB loaderlib.c readpng.c streamcube.h -lpthreadGC2 -lpng -lz -ljpeg -lcurl -lwldap32 -lz -lws2_32 -lwsock32
+
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -844,7 +845,12 @@ const char* baseURL,const char* userName,const char* password, int* serverFormat
 
 
 	if ((ServerFormat>0) && (BaseURL!=NULL)){
-		curl_global_init(CURL_GLOBAL_ALL);
+		error=curl_global_init(CURL_GLOBAL_ALL);
+		if (error>0){
+		printf("Could not initialize CURL global: Error %i\n",error);
+		}
+		else{
+		printf("CURL global initiation called successfully.\n");}
 	};
 
 	ThreadID=(pthread_t*)calloc(NThreads,sizeof(pthread_t));

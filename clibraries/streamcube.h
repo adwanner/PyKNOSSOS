@@ -15,7 +15,6 @@ size_t size;
 CURL *curl_handle;
 };
 
-
 int WriteCube(void *userp,const char *basepath, const char *basename, const char *baseExt, unsigned int mag, unsigned int x, unsigned int y, unsigned int z){
 	FILE *fid;
 	char *CubePath;
@@ -100,7 +99,7 @@ static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, voi
 	return realsize;
 }
 int InitStream(void *userp){
-	long MaxLoadingTime=10;
+	long MaxLoadingTime=2*60;//25;
 	int returnsignal;
 
 
@@ -125,7 +124,10 @@ int InitStream(void *userp){
 		curl_easy_setopt(InputCube->curl_handle, CURLOPT_TIMEOUT,MaxLoadingTime); 
 
 		/* Switch on full protocol/debug output while testing */
-		//curl_easy_setopt(InputCube->curl_handle, CURLOPT_VERBOSE, 1L);
+		curl_easy_setopt(InputCube->curl_handle, CURLOPT_VERBOSE, 1L);
+
+		/* follow if redirected by the server*/
+		curl_easy_setopt(InputCube->curl_handle, CURLOPT_FOLLOWLOCATION, 1L);
 
 		/* disable progress meter, set to 0L to enable and disable debug output */
 		curl_easy_setopt(InputCube->curl_handle, CURLOPT_NOPROGRESS, 1L);
@@ -146,10 +148,8 @@ int InitStream(void *userp){
 	};
 }
 
-int StreamCube(void *userp,unsigned int ServerFormat, const char *baseurl,const char *baseName,const char *baseExt,const char *userName,const char *password,unsigned int mag, unsigned int x, unsigned int y, unsigned int z){
+int StreamCube(void *userp,unsigned int ServerFormat, const char *baseurl,const char *baseName,const char *baseExt,const char *userName,const char *password,unsigned int mag, unsigned int x, unsigned int y, unsigned int z,int *CubeSize){
 	char *CubeURL;
-	unsigned int cubesize= 128;
-	long MaxLoadingTime=10;
 	CURLcode res;
 	size_t BaseURLLength, baseNameLength, baseExtLength;
 	int returnsignal;
@@ -157,6 +157,7 @@ int StreamCube(void *userp,unsigned int ServerFormat, const char *baseurl,const 
 	baseNameLength=strlen(baseName);
 	baseExtLength=strlen(baseExt);
 	int doHTTPAUTH=0;
+	char errbuf[CURL_ERROR_SIZE];
 
 	struct MemoryStruct *InputCube = (struct MemoryStruct *)userp;
 	InputCube->memory = malloc(1);/* will be grown as needed by the realloc above */
@@ -164,11 +165,11 @@ int StreamCube(void *userp,unsigned int ServerFormat, const char *baseurl,const 
 
 	switch (ServerFormat){
 		case 1:
-			CubeURL=(char *)calloc((BaseURLLength+1+2+1+ 10+1+10+1 + 10+1+10+1+ 10+1+10+1 +1),sizeof(char));
+			CubeURL=(char *)calloc((BaseURLLength+1+2+1+ 10+1+10+1 + 10+1+10+1+ 10+1+10+1 + 7+1 +1),sizeof(char));
 			if (CubeURL==NULL){printf("Could not allocate memory for CubeURL.\n");return -1;}
 
-			sprintf(CubeURL,"%s/%02u/%010u,%010u/%010u,%010u/%010u,%010u/",\
-				baseurl,mag-1,x*cubesize,(x+1)*cubesize,y*cubesize,(y+1)*cubesize,z*cubesize,(z+1)*cubesize);
+			sprintf(CubeURL,"%s/%02u/%010u,%010u/%010u,%010u/%010u,%010u/neariso/",\
+				baseurl,mag-1,x*CubeSize[0],(x+1)*CubeSize[0],y*CubeSize[1],(y+1)*CubeSize[1],z*CubeSize[2],(z+1)*CubeSize[2]);
 			break;
 		case 2:	
 			doHTTPAUTH=1;
@@ -178,11 +179,17 @@ int StreamCube(void *userp,unsigned int ServerFormat, const char *baseurl,const 
 			sprintf(CubeURL,"%s/mag%u/x%04u/y%04u/z%04u/%s_mag%u_x%04u_y%04u_z%04u%s",\
 				baseurl,mag,x,y,z,baseName,mag,x,y,z,baseExt);
 			break;
+		case 3:
+			CubeURL=(char *)calloc((BaseURLLength+7 +10+1+10+1+10 +5 +2 +6 + 4+1+4+1+4  +1),sizeof(char));
+			if (CubeURL==NULL){printf("Could not allocate memory for CubeURL.\n");return -1;}
+			sprintf(CubeURL,"%s&start=%010u,%010u,%010u&mip=%02u&size=%04u,%04u,%04u",\
+				baseurl,x*CubeSize[0],y*CubeSize[1],z*CubeSize[2],mag-1,CubeSize[0],CubeSize[1],CubeSize[2]);
+			break;
 
 		printf("ERROR: Unknown server format: %u\n",ServerFormat);
 		return 0;
 	};
-	//printf("Load cube from url: %s\n",CubeURL);
+	printf("Load cube from url: %s\n",CubeURL);
 
 	if(InputCube->curl_handle==NULL) {
 		printf("ERROR: Could not curl_easy_init().\n");
@@ -196,22 +203,40 @@ int StreamCube(void *userp,unsigned int ServerFormat, const char *baseurl,const 
 			curl_easy_setopt(InputCube->curl_handle, CURLOPT_USERNAME,userName);
 			curl_easy_setopt(InputCube->curl_handle, CURLOPT_PASSWORD,password);
 		}
+
+		curl_easy_setopt(InputCube->curl_handle, CURLOPT_ERRORBUFFER,errbuf);	
+		errbuf[0]=0;	
+		
 		/* get it! */
 		res=curl_easy_perform(InputCube->curl_handle);
+
+		long http_code = 0;
+		curl_easy_getinfo (InputCube->curl_handle,CURLINFO_RESPONSE_CODE, &http_code);
 
 		/* check for errors */
 		if(res != CURLE_OK) {
 			if (res==CURLE_OPERATION_TIMEDOUT){
+				printf("CURL: timeout\n");
 				returnsignal=2;
 			}
-			else{
+			else{	
+				printf("CURL error: %s\n",errbuf);
 				returnsignal= 0;
 			}
 		}
-		else{	
-			returnsignal= 1;
+		else{
+			if (http_code==200){
+				printf("CURL: http_code=200\n");
+				returnsignal=1;
+			}
+			else{
+				printf("CURL: http_code not =200\n");
+				returnsignal=2;
+			}
 		}
-		if (InputCube->size==0){ returnsignal=2;};
+		if (InputCube->size==0){
+			returnsignal=2;
+		};
 	};
 	if (CubeURL!=NULL){
 		free(CubeURL);

@@ -29,7 +29,7 @@ experimental=1 #show experimental features
 encryptionkey='EncryptPyKnossos';
 #AES key must be either 16, 24, or 32 bytes long
 
-PyKNOSSOS_VERSION='PyKNOSSOS2.120160918'
+PyKNOSSOS_VERSION='PyKNOSSOS2.320161108'
 
 if usermode==1:
     experimental=0
@@ -303,7 +303,10 @@ def str2num(format,value):
         return float(value)
 
 
-def ParseNML(filename,root,parseflags=True):
+def ParseNML(filename,root=None,parseflags=True):
+    if not root:
+        root= lxmlET.parse(filename).getroot()
+
     Data=dict()
 
     #assuming filename like dataset_parent_id***_objtype_flags_date.nml
@@ -1834,6 +1837,8 @@ class synapse_detection(task):
         self._neuronId=float(self._neuronId)
         if not self.ariadne.Neurons.has_key(self._neuronId):
             print "Source {0} not found.".format(self._neuronId)
+            return
+        if not "skeleton" in self.ariadne.Neurons[self._neuronId].children:
             return
         self.Source=self.ariadne.Neurons[self._neuronId].children["skeleton"]
         self.RMF()
@@ -11271,17 +11276,26 @@ class ARIADNE(QtGui.QMainWindow):
                         datasetpath=os.path.join(self._DefaultDataPath,dataset)
                         configfile=os.path.join(datasetpath,"{0}.conf".format(dataset))    
                         if not os.path.isfile(configfile):
-                            if os.path.isdir(self._DefaultDataPath):
-                                startpath=self._DefaultDataPath
+                            filelist=glob.glob(os.path.join(datasetpath,'*.conf'))
+                            if filelist.__len__()==1:
+                                configfile=filelist[0]
                             else:
-                                startpath=application_path                    
-                            datasetpath = QtGui.QFileDialog.getExistingDirectory(self,"Choose the PARENT directory of dataset: {0}".format(dataset) ,\
-                                startpath)
-                            datasetpath=unicode(datasetpath)
-                            if not (not datasetpath):
-                                if not datasetpath.endswith(dataset):
-                                    datasetpath=os.path.join(datasetpath,dataset)                    
-                                configfile=os.path.join(datasetpath,"{0}.conf".format(dataset))    
+                                if os.path.isdir(self._DefaultDataPath):
+                                    startpath=self._DefaultDataPath
+                                else:
+                                    startpath=application_path                    
+                                datasetpath = QtGui.QFileDialog.getExistingDirectory(self,"Choose the PARENT directory of dataset: {0}".format(dataset) ,\
+                                    startpath)
+                                datasetpath=unicode(datasetpath)
+                                if not (not datasetpath):
+                                    if not datasetpath.endswith(dataset):
+                                        datasetpath=os.path.join(datasetpath,dataset)                    
+                                    configfile=os.path.join(datasetpath,"{0}.conf".format(dataset))    
+                                    if not os.path.isfile(configfile):
+                                        filelist=glob.glob(os.path.join(datasetpath,'*.conf'))
+                                        if filelist.__len__()==1:
+                                            configfile=filelist[0]
+                                    
                         if os.path.isfile(configfile) and not (self.CurrentDataset[1]==configfile):
                             self.ChangeCubeDataset(configfile)
             
@@ -11619,7 +11633,12 @@ class ARIADNE(QtGui.QMainWindow):
         targetdir=os.path.join(application_path,'temp')
         targetdir=os.path.join(targetdir,basename)
         if not os.path.isdir(targetdir):
-            os.makedirs(targetdir)
+            try:
+                os.makedirs(targetdir)
+            except:
+                print "Error: Could not makedirs: ", targetdir
+                return
+            
         zipf.extractall(targetdir)
         zipf.close()
     
@@ -12211,7 +12230,11 @@ class ARIADNE(QtGui.QMainWindow):
         if os.path.isdir(tempdir):
             shutil.rmtree(tempdir) #remove any existing temporary host dir
         if not os.path.isdir(tempdir):
-            os.makedirs(tempdir)
+            try:
+                os.makedirs(tempdir)
+            except:
+                print "Error: Could not makedirs: ", tempdir
+                return
         
         if not zipfile.is_zipfile(origfilename):
             decrypted_nmxfile=unicode(os.path.join(tempdir,'{0}{1}'.format(basename,ext)))
@@ -12306,7 +12329,12 @@ class ARIADNE(QtGui.QMainWindow):
             blockpath=os.path.join(application_path,'temp')
             blockpath=os.path.join(blockpath,basename)
         if not os.path.isdir(blockpath):
-            os.makedirs(blockpath)
+            try: 
+                os.makedirs(blockpath)
+            except:
+                print "Error: Could not makedirs: ", blockpath
+                self.SaveAs(Neurons)
+                return
 
         activeNode=None
         dataset=None
@@ -12382,7 +12410,13 @@ class ARIADNE(QtGui.QMainWindow):
         else:
             blockpath,ext=  os.path.splitext(unicode(filename))      
             if not os.path.isdir(blockpath):
-                os.makedirs(blockpath)        
+                try: 
+                    os.makedirs(blockpath)
+                except:
+                    print "Error: Could not makedirs: ", blockpath
+                    self.SaveAs(Neurons)
+                    return
+                
         NodeID=None    
         for neuronId, neuron_obj in Neurons.iteritems():
             if not neuron_obj:
@@ -13785,7 +13819,12 @@ class ARIADNE(QtGui.QMainWindow):
         
         impath,tail=  os.path.split(unicode(filename))      
         if not os.path.isdir(impath):
-            os.makedirs(impath)        
+            try: 
+                os.makedirs(impath)
+            except:
+                print "Error: Could not makedirs: ", impath
+                return
+
         images2gif.writeGif(filename+fileext,frames)
 #        self.text_GIFPath.setText(filename+fileext)
 
@@ -13826,7 +13865,11 @@ class ARIADNE(QtGui.QMainWindow):
             if os.path.isdir(tempdir):
                 shutil.rmtree(tempdir) #remove any existing temporary host dir
             if not os.path.isdir(tempdir):
-                os.makedirs(tempdir)
+                try:
+                    os.makedirs(tempdir)
+                except:
+                    print "Error: Could not makedirs: ", tempdir
+                    return
             
             encrypted_filename=os.path.join(tempdir,'{0}{1}'.format(basename,ext))
             encrypt_file(encryptionkey,filename, encrypted_filename, chunksize=64*1024)
@@ -13864,7 +13907,11 @@ class ARIADNE(QtGui.QMainWindow):
             if os.path.isdir(tempdir):
                 shutil.rmtree(tempdir) #remove any existing temporary host dir
             if not os.path.isdir(tempdir):
-                os.makedirs(tempdir)
+                try:
+                    os.makedirs(tempdir)
+                except:
+                    print "Error: Could not makedirs: ", tempdir
+                    return
             
             decrypted_filename=os.path.join(tempdir,'{0}{1}'.format(basename,ext))
             decrypt_file(encryptionkey,filename, decrypted_filename, chunksize=64*1024)
