@@ -16,14 +16,16 @@ can be used to generate 3D renderings and animated displays of raw data and reco
 RAM as users navigate through a volume. This allows users to browse through large datasets
 (>1TB) with minimal RAM requirements. Storing multiple sets of cubes at different resolutions
 allows for seamless zooming through large volumes and the extraction of virtual reslices with
-arbitrary orientation and zoom-level.
+arbitrary orientation and zoom-level. The data can be loaded from local hard disk storage, via
+a hybrid streaming pipeline from HTTP accessible servers, or via the JPEG stack service of the
+data API of neurodata (http://www.neurodata.io).
 
 3. Virtual reslicing of the raw data orthogonal to local processes. Tracing of neurites and branch
 point detection should be particularly efficient when users view a section through the EM data
 volume that is orthogonal to the process being traced. Such virtual reslices should also facilitate
 the identification of synapses because presynaptic vesicles, the synaptic density, and the
-postsynapse are contained in the same view. PyKNOSSOS automatically calculates a rotationminimized
-“locally orthogonal” section4 during tracing and presents it in a separate viewport, in
+postsynapse are contained in the same view. PyKNOSSOS automatically calculates a rotation-minimized
+“locally orthogonal” section during tracing and presents it in a separate viewport, in
 addition to the cardinal cross-sections and the imaging plane. We found that the “locally
 orthogonal” view facilitates the detection of branch points and increases tracing speed.
 

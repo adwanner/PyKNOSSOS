@@ -23,13 +23,13 @@ usermode=0 #0: expert mode, 1: user mode
 
 doload=1 #start cube loader
 mprocess=1 #use seperate process for cube loader
-experimental=1 #show experimental features
+experimental=1 #show experimental features (false if usermode==1)
 
 #your encryption key used for encrypting and decrypting annotation files
 encryptionkey='EncryptPyKnossos';
 #AES key must be either 16, 24, or 32 bytes long
 
-PyKNOSSOS_VERSION='PyKNOSSOS2.320161108'
+PyKNOSSOS_VERSION='PyKNOSSOS2.320170215'
 
 if usermode==1:
     experimental=0
@@ -304,7 +304,7 @@ def str2num(format,value):
 
 
 def ParseNML(filename,root=None,parseflags=True):
-    if not root:
+    if root is None:
         root= lxmlET.parse(filename).getroot()
 
     Data=dict()
@@ -886,6 +886,7 @@ class Loader:
     _CubeSize=(128,128,128)
     _NumberofCubes=(120,120,120)
     _BaseName=""
+    _Description=""
     _BaseExt=".raw"
     _BasePath=""
     _BaseURL=""
@@ -897,6 +898,7 @@ class Loader:
     _Extent=[120*128,120*128,120*128]
     _Origin=[0.0,0.0,0.0]
     _Magnification=1;
+    DataSetConf=None
     doload=1;
     InterPolFactor=1.0; #optimally 2.0
 
@@ -912,7 +914,7 @@ class Loader:
         self.Position=RawArray(c_float,(1000.0,1000.0,1000.0))
         self.ShortestEdge=[]
 
-    def LoadDatasetInformation(self,filename):
+    def LoadDatasetInformation(self,filename="",DatasetKey=None):
         NPixels=self._CubeSize[0]*self._CubeSize[1]*self._CubeSize[2];
         maxNCubesPerEdge=np.floor((float(maxContRAMBlock)/float(NPixels))**(1.0/3.0))
         window1.SpinBox_CubesPerEdge.setMaximum(maxNCubesPerEdge)
@@ -935,15 +937,40 @@ class Loader:
             window1.SpinBox_StreamingSlots.setValue(NStreamingChannels)
         self._NStreamingChannels=NStreamingChannels
         
-        if not filename:
+        if ((not DatasetKey) or (not self.DataSetConf)) and (not filename):
             print "No dataset specified."
             return None
-        if not os.path.isfile(filename):
-            print "Error: dataset file {0} not found.".format(filename)
-            return None
-        self.filename=filename;
-            
+        
+        if not (not filename):
+            if not os.path.isfile(filename):
+                print "Error: dataset file {0} not found.".format(filename)
+                return None            
+            self.filename=filename;
+            DataSetConf=config(filename)
+        else:
+            DataSetConf=self.DataSetConf
+
+        if not DataSetConf:
+            print "Error: No dataset configuration found."
+            return
+        
+        if (not DatasetKey):
+            if "Dataset" in DataSetConf:
+                DatasetKey="Dataset"
+            else:
+                for idataset in range(0,100):
+                    if not "Dataset{0}".format(idataset) in DataSetConf:
+                        continue
+                    DatasetKey="Dataset{0}".format(idataset)
+                    break;
+        else:
+            if not DatasetKey in self.DataSetConf:
+                print "Dataset key {0} not found in the current dataset config.".format(DatasetKey)
+                return
+                
+        self.loadedDataset=""
         self._BaseName=""
+        self._Description=""
         self._BaseExt=".raw"
         self._BasePath=""
         self._BaseURL=""
@@ -955,8 +982,11 @@ class Loader:
         self._NumberofCubes=(120,120,120)
         self._DataScale=(1.0,1.0,1.0)
         self._CubeSize=(128,128,128)
-        DataSetConf=config(filename)        
-        DataSetConf.LoadConfig(self,"Dataset")
+
+        DataSetConf.LoadConfig(self,DatasetKey)
+        self.loadedDataset=DatasetKey                
+        self.DataSetConf=DataSetConf
+
         self._BasePath=os.path.dirname(filename)
         if not self._Extent:     
             self._Extent=[\
@@ -2241,9 +2271,10 @@ class planeROI():
         self.Image.SetDataScalarTypeToUnsignedChar()
         self.Image.SetNumberOfScalarComponents(1)
         self.complete=0
-                
-        useLookupTable=1
-        if useLookupTable:
+        #Rendering is faster without lookup table,
+        #but the lookuptable allows to easily control brightness and contrast        
+        self.UseLookupTable=1;
+        if self.UseLookupTable:
             # Create a greyscale lookup table
             self.Table = vtk.vtkLookupTable()
             self.Table.SetRange(0, 255) # image intensity range
@@ -2265,8 +2296,13 @@ class planeROI():
         self.Texture.InterpolateOff()
         self.Texture.RepeatOff()
         self.Texture.EdgeClampOff()
-        if useLookupTable:
-            self.Texture.SetInputConnection(self.Image2ColorMap.GetOutputPort())
+        if self.UseLookupTable:
+            if self.Table.GetValueRange()==(0.0,1.0) and \
+            self.Table.GetRange()==(0,255):
+                self.Texture.MapColorScalarsThroughLookupTableOff()
+                self.Texture.SetInputConnection(self.Image.GetOutputPort())
+            else:
+                self.Texture.SetInputConnection(self.Image2ColorMap.GetOutputPort())
         else:
             self.Texture.MapColorScalarsThroughLookupTableOff()
             self.Texture.SetInputConnection(self.Image.GetOutputPort())
@@ -2457,7 +2493,20 @@ class planeROI():
 #            "vDir", self.cvDir[0],self.cvDir[1],self.cvDir[2], \
 #            "hDir", self.chDir[0],self.chDir[1],self.chDir[2], \
 #            "ROISize", self.cROISize[0],self.cROISize[1], "Magnification", Magnification
-        complete=extractROIlib.interp_ROI(self.cCenter,self.cvDir,self.chDir,self.cROISize,self.ROI,Magnification,\
+        if self._Orientation=="YX":
+            imag=Magnification.value
+            Scale=[CubeLoader.DataScale[(imag-1)*3+0],CubeLoader.DataScale[(imag-1)*3+1],CubeLoader.DataScale[(imag-1)*3+2]]
+            Center=RawArray(c_float,np.array(\
+                [self.cCenter[0],self.cCenter[1],\
+                np.floor(self.cCenter[2]/Scale[2])*Scale[2]],np.float))
+#            Center=RawArray(c_float,np.array(\
+#                [np.floor(self.cCenter[0]/Scale[0])*Scale[0],\
+#                np.floor(self.cCenter[1]/Scale[1])*Scale[1],\
+#                np.floor(self.cCenter[2]/Scale[2])*Scale[2]],np.float))
+#            print "Magnification: {0}; Center: ({1},{2},{3}".format(Magnification,Center[0],Center[1],Center[2])
+        else:
+            Center=self.cCenter;
+        complete=extractROIlib.interp_ROI(Center,self.cvDir,self.chDir,self.cROISize,self.ROI,Magnification,\
             c_int(self._ForceLoaderFlag),CubeLoader.Position,CubeLoader.Magnification,CubeLoader.LoaderState);
         self.complete=complete;
         
@@ -4453,6 +4502,19 @@ class QRenWin(QtGui.QWidget):
                 self.ariadne.radioBtn_showconcomp.setChecked(1)
 #            self.ariadne.Capture()
         elif key == QtCore.Qt.Key_Q:
+            DatasetKeys=CubeLoader.DataSetConf.keys()
+            if not CubeLoader.loadedDataset in CubeLoader.DataSetConf:
+                return
+            pos=DatasetKeys.index(CubeLoader.loadedDataset)
+            if pos>=(DatasetKeys.__len__()-1):
+                pos=0
+            else:
+                pos+=1
+            
+            status=self.ariadne.ChangeCubeDataset(None,0,DatasetKeys[pos])
+
+            if status==1:
+                print "Switched to dataset: {0}".format(DatasetKeys[pos])
             return
         elif key == QtCore.Qt.Key_J:
             self.viewports["skeleton_viewport"].JumpToPoint(np.array([CubeLoader.Position[0],CubeLoader.Position[1],CubeLoader.Position[2]],dtype=np.float))
@@ -10648,6 +10710,17 @@ class ARIADNE(QtGui.QMainWindow):
 #                tempupper=oldrange[1]
             plane.Table.SetValueRange(templower/255.0,tempupper/255.0) # image intensity range
             plane.Table.Modified()
+            if plane.UseLookupTable:
+                if plane.Table.GetValueRange()==(0.0,1.0) and \
+                plane.Table.GetRange()==(0,255):
+                    plane.Texture.MapColorScalarsThroughLookupTableOff()
+                    plane.Texture.SetInputConnection(plane.Image.GetOutputPort())
+                    plane.Texture.Modified()
+                else:
+                    plane.Texture.SetInputConnection(plane.Image2ColorMap.GetOutputPort())
+                    plane.Texture.Modified()
+                
+                    
 #        print lower, upper
         self.QRWin.Render()
         
@@ -10664,6 +10737,17 @@ class ARIADNE(QtGui.QMainWindow):
 #                tempupper=oldrange[1]
             plane.Table.SetRange(templower,tempupper) # image intensity range
             plane.Table.Modified()
+
+            if plane.UseLookupTable:
+                if plane.Table.GetValueRange()==(0.0,1.0) and \
+                plane.Table.GetRange()==(0,255):
+                    plane.Texture.MapColorScalarsThroughLookupTableOff()
+                    plane.Texture.SetInputConnection(plane.Image.GetOutputPort())
+                    plane.Texture.Modified()
+                else:
+                    plane.Texture.SetInputConnection(plane.Image2ColorMap.GetOutputPort())
+                    plane.Texture.Modified()
+
 #        print lower, upper
         self.QRWin.Render()
         
@@ -10816,7 +10900,7 @@ class ARIADNE(QtGui.QMainWindow):
         if action:
             self.ChangeCubeDataset(action._File)
         
-    def ChangeCubeDataset(self,filename=None,recenter=1):
+    def ChangeCubeDataset(self,filename=None,recenter=1,DatasetKey=None):
         if not filename:
             filename=CubeLoader.filename;
         if not filename:
@@ -10827,7 +10911,7 @@ class ARIADNE(QtGui.QMainWindow):
             return 0
 
         if os.path.isfile(filename):
-            DatasetName=CubeLoader.LoadDatasetInformation(filename)
+            DatasetName=CubeLoader.LoadDatasetInformation(filename,DatasetKey)
             if not DatasetName:
                 print "Error: Could not find/load dataset config file {0}".format(filename)
                 return -1                
@@ -11621,10 +11705,16 @@ class ARIADNE(QtGui.QMainWindow):
         if os.path.isdir(blockpath):
             shutil.rmtree(blockpath)
         if os.path.isfile(amlfile):
-            os.remove(amlfile)
+            try:
+                os.remove(amlfile)
+            except:
+                print 'Could not remove file: ', amlfile
         if not jobfile==None:
             if os.path.isfile(jobfile):
-                os.remove(jobfile)
+                try:
+                    os.remove(jobfile)
+                except:
+                    print 'Could not remove file: ', jobfile
 
     def LoadAMXFile(self,origfilename):
         basepath, basename = os.path.split(unicode(origfilename))
@@ -11824,6 +11914,9 @@ class ARIADNE(QtGui.QMainWindow):
             Dataset="None"
         else:
             Dataset=CubeLoader._BaseName
+            if not (not CubeLoader._Description):
+                Dataset+=", {0}".format(CubeLoader._Description)
+            
         
         if (self._WorkingOffline==1) or (self.ActionWorkingOffline.isEnabled()==0):
             OnlineMode='offline';
@@ -12288,17 +12381,27 @@ class ARIADNE(QtGui.QMainWindow):
             Neurons.update(tempNeurons)
         for filename in filelist:
             if os.path.isfile(filename):
-                os.remove(filename)
+                try:
+                    os.remove(filename)
+                except:
+                    print 'Could not remove file: ', filename
         for filename in txtfilelist:
             tempNeurons,SelObj,tempfilename,editPosition,dataset=self.LoadFileList(filename)
             Neurons.update(tempNeurons)
         for filename in txtfilelist:
             if os.path.isfile(filename):
-                os.remove(filename)
+                try:
+                    os.remove(filename)
+                except:
+                    print 'Could not remove file: ', filename
                     
         for root, dirnames, filenames in os.walk(tempdir):
           for filename in fnmatch.filter(filenames, '*.nmx'):
-              os.remove(os.path.join(root, filename))
+              tempfilename=os.path.join(root, filename);
+              try:
+                  os.remove(tempfilename)
+              except:
+                  print 'Could not remove file: ', tempfilename
         
         if jobfiles.__len__()>0:
             #should handle here the case of multiple job files.
@@ -12309,7 +12412,10 @@ class ARIADNE(QtGui.QMainWindow):
             self.job.load_job()
             for filename in jobfiles:
                 if os.path.isfile(filename):
-                    os.remove(filename)
+                    try:
+                        os.remove(filename)
+                    except:
+                        print 'Could not remove file: ', filename
 
             if not (not (self.job._Dataset)):                
                 dataset=self.job._Dataset
@@ -12382,7 +12488,10 @@ class ARIADNE(QtGui.QMainWindow):
             encrypted_nmxfile=os.path.join(basepath,"{0}_temp.nmx".format(basename))
             encrypt_file(encryptionkey, nmxfile, encrypted_nmxfile, chunksize=64*1024)
             if os.path.isfile(nmxfile):
-                os.remove(nmxfile)
+                try:
+                    os.remove(nmxfile)
+                except:
+                    print 'Could not remove file: ', nmxfile
             if os.path.isfile(encrypted_nmxfile):
                 shutil.move(encrypted_nmxfile,nmxfile)
         
@@ -12421,10 +12530,20 @@ class ARIADNE(QtGui.QMainWindow):
         for neuronId, neuron_obj in Neurons.iteritems():
             if not neuron_obj:
                 continue
+            
+            if (\
+                ('d' in neuron_obj.flags) or \
+                ('x' in neuron_obj.flags)): #exclude any neurons belonging to a demand-driven pipeline from saving
+                continue;
 
             for objtype, child in neuron_obj.children.iteritems():               
                 if not child:
                     continue
+
+                if (\
+                    ('d' in child.flags) or \
+                    ('x' in child.flags)): #exclude any neurons belonging to a demand-driven pipeline from saving
+                    continue;
        
                 if not KNOSSOSflag:
                     root =lxmlET.Element('things')
@@ -13839,7 +13958,10 @@ class ARIADNE(QtGui.QMainWindow):
             if not success:
                 continue            
             if self.ckbx_deleteSeed.isChecked() and os.path.isfile(filename):
-                os.remove(filename)
+                try:
+                    os.remove(filename)
+                except:
+                    print 'Could not remove file: ', filename
 
     def Encrypt(self):
         filelist=unicode(self.text_SeedPath.text())
@@ -13874,7 +13996,10 @@ class ARIADNE(QtGui.QMainWindow):
             encrypted_filename=os.path.join(tempdir,'{0}{1}'.format(basename,ext))
             encrypt_file(encryptionkey,filename, encrypted_filename, chunksize=64*1024)
             if self.ckbx_deleteSeed.isChecked() and os.path.isfile(filename):
-                os.remove(filename)
+                try:
+                    os.remove(filename)
+                except:
+                    print 'Could not remove file: ', filename
             filename=os.path.join(basepath,'{0}{1}'.format(basename,ext))
             shutil.move(encrypted_filename,filename)
             if os.path.isdir(tempdir):
@@ -13916,7 +14041,10 @@ class ARIADNE(QtGui.QMainWindow):
             decrypted_filename=os.path.join(tempdir,'{0}{1}'.format(basename,ext))
             decrypt_file(encryptionkey,filename, decrypted_filename, chunksize=64*1024)
             if self.ckbx_deleteSeed.isChecked() and os.path.isfile(filename):
-                os.remove(filename)
+                try:
+                    os.remove(filename)
+                except:
+                    print 'Could not remove file: ', filename
             filename=os.path.join(basepath,'{0}{1}'.format(basename,ext))
             shutil.move(decrypted_filename,filename)
             if os.path.isdir(tempdir):
@@ -13940,14 +14068,20 @@ class ARIADNE(QtGui.QMainWindow):
                 self.CreateTracingJob(filelist,jobfilename)
             for filename in filelist:                
                 if self.ckbx_deleteSeed.isChecked() and os.path.isfile(filename):
-                    os.remove(filename)
+                    try:
+                        os.remove(filename)
+                    except:
+                        print 'Could not remove file: ', filename
         else:
             for filename in filelist:
                 if self.comboBox_TaskType.currentIndex()==0:
                     self.CreateTracingJob(filename,jobfilename)
                 
                 if self.ckbx_deleteSeed.isChecked() and os.path.isfile(filename):
-                    os.remove(filename)
+                    try:
+                        os.remove(filename)
+                    except:
+                        print 'Could not remove file: ', filename
                     
         self.ckbx_encryptFile.setChecked(oldState)
         
