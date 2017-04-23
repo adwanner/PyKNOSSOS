@@ -1029,7 +1029,10 @@ class Loader:
         for idx in range(self.DataScale.__len__()/3):
 #            if maxROIEdge*1.2<self.ShortestEdge[idx]:
             #sqrt(2)*arbitrary_orientation_diagonal=shortest_hypercube_edge 
-            CubeRes=min([self.DataScale[idx*3],self.DataScale[idx*3+1],self.DataScale[idx*3+2]])
+            #CubeRes=min([self.DataScale[idx*3],self.DataScale[idx*3+1],self.DataScale[idx*3+2]])
+            CubeRes=np.sqrt(self.DataScale[idx*3]*self.DataScale[idx*3]+\
+                self.DataScale[idx*3+1]*self.DataScale[idx*3+1]+\
+                self.DataScale[idx*3+2]*self.DataScale[idx*3+2])
             if np.round(maxROIEdge,3)<=np.round(self.InterPolFactor*CubeRes,3):
                 break;
 
@@ -2972,17 +2975,18 @@ class viewport(vtk.vtkRenderer):
         
     def Move(self,dstep,Direction):
         FocalPoint=np.array(self.Camera.GetFocalPoint(),dtype=np.float)
+        Scale=np.max(self.ariadne.DataScale)
         if Direction=="Z":
-            FocalPoint[2]+=dstep*self.ariadne.DataScale[2]
+            FocalPoint[2]+=dstep*Scale
         elif Direction=="Y":
-            FocalPoint[1]+=dstep*self.ariadne.DataScale[2]
+            FocalPoint[1]+=dstep*Scale
         elif Direction=="X":
-            FocalPoint[0]+=dstep*self.ariadne.DataScale[2]
+            FocalPoint[0]+=dstep*Scale
         elif Direction=="orth":
             PPoint=np.array(self.Camera.GetPosition(),dtype=np.float)
             cDir=(FocalPoint-PPoint)
             vtk.vtkMath.Normalize(cDir)
-            FocalPoint+=dstep*self.ariadne.DataScale[2]*cDir
+            FocalPoint+=dstep*Scale*cDir
             
         #CubeLoader.UpdatePosition(FocalPoint)
             
