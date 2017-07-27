@@ -13,10 +13,11 @@
 #For Windows, many Python extension packages can easily be installed using the
 # binaries provided here: http://www.lfd.uci.edu/~gohlke/pythonlibs/
 
-#This has been used successfully with the following PyQt4 versions 
+#PyKnossos has been used successfully with the following package versions:
 #Qt version:   4.8.6  (windows and linux)
 #SIP version:  4.16.2 (windows) and 4.15.5 (linux)
 #PyQt version: 4.11.1 (windows) and 4.10.4 (linux)
+#vtk version: 5.8.0 (linux)
 
 #developer switches
 usermode=0 #0: expert mode, 1: user mode
@@ -2476,7 +2477,7 @@ class planeROI():
             return    
                         
 #        maxROIEdge=np.max([[plane.cROISize[0]*plane.ROIRes[0]*plane._ROIScale[0],plane.cROISize[1]*plane.ROIRes[1]*plane._ROIScale[1]] for key,plane in window1.planeROIs.iteritems()])
-        
+                        
         maxROIEdge=np.min([self.ROIRes[0]*self._ROIScale[0],self.ROIRes[1]*self._ROIScale[1]])
  
         Magnification=c_int(CubeLoader.CheckMagnification(maxROIEdge));
@@ -11076,6 +11077,7 @@ class ARIADNE(QtGui.QMainWindow):
             filename=linestr[0]
             if filename==None or filename=='':# or filename.endswith('.txt'):
                 continue
+            filename=filename.decode("utf-8")
             tempNeurons,SelObj,editPosition,dataset=self.Open(filename,"Append",1)
             if tempNeurons==None:
                 continue
