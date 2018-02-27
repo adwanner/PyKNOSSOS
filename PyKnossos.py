@@ -19,6 +19,11 @@
 #PyQt version: 4.11.1 (windows) and 4.10.4 (linux)
 #vtk version: 5.8.0 (linux)
 
+#Installation with spyder on Ubuntu 16.04.3 LTS (Xenial Xerus) 64-bit:
+#sudo apt-get install spyder
+#sudo apt-get install libvtk5-dev python-vtk
+#copy QxtSpanSlider.py and images2gif.py from the sources above into the PyKnossos.py folder
+
 #developer switches
 usermode=0 #0: expert mode, 1: user mode
 
@@ -9657,7 +9662,7 @@ class ARIADNE(QtGui.QMainWindow):
             LUT.SetTableRange(0,NNeurons-1)
             LUT.Build();
 
-            zdir=np.array([-0.4410,-0.6302,0.6390],dtype=np.float);
+            zdir=np.array([0.0,0.0,1.0],dtype=np.float);
             SomaCenter=list()
             NeuronIDs=list()
             for neuronId, neuron_obj in window1.Neurons.iteritems():
