@@ -11402,7 +11402,21 @@ class ARIADNE(QtGui.QMainWindow):
             if filename.endswith(".obj"):
                 filename=unicode(filename)
                 tempNeurons,SelObj,editPosition=self.LoadObjFile(filename)
-                Neurons.update(tempNeurons)                
+                if not tempNeurons:
+                    print "Could not load file: ", filename
+                    continue
+                for NeuronID, neuron_obj in tempNeurons.iteritems():
+                    if NeuronID in Neurons:
+                        oldNeuronID=NeuronID
+                        step=1
+                        while Neurons.has_key(NeuronID):
+                            NeuronID=oldNeuronID+step*0.001
+                            step+=1
+    
+                        print "tree id: {0}".format(NeuronID)
+                        neuron_obj.set_new_neuronId(NeuronID)
+                    if not (not neuron_obj):
+                        Neurons[NeuronID]=neuron_obj
 #            try:
             elif filename.endswith(".ddx"):
                 filename=unicode(filename)
