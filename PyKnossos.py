@@ -3235,7 +3235,11 @@ class QRenWin(QtGui.QWidget):
                 self.unselect()
                 self.SelObj=[ObjType,neuronID,nodeId]
                 obj.select()
-                
+            elif ObjType=="mesh":
+                self.unselect()
+                self.SelObj=[ObjType,neuronID,nodeId]
+                obj.select()
+                self.GotoActiveObj()                
             elif ObjType=="tag":
                 self.unselect()
                 self.SelObj=[ObjType,neuronID,nodeId]
@@ -3319,6 +3323,10 @@ class QRenWin(QtGui.QWidget):
                     FaceCenterPoints=FaceCenterPoints.GetData()
                 if not (not FaceCenterPoints):
                     Point=np.mean(vtk_to_numpy(FaceCenterPoints),0)
+        elif ObjType=="mesh":
+            pointIdx=obj.nodeId2pointIdx(nodeId)
+            if  pointIdx>-1:
+                Point=obj.data.GetPoint(pointIdx)
         elif ObjType=="skeleton":
             pointIdx=obj.nodeId2pointIdx(nodeId)
             if  pointIdx>-1:
@@ -3766,6 +3774,14 @@ class QRenWin(QtGui.QWidget):
                 self.SetActiveObj(ObjType,NeuronID,nodeId)
 #                print "soma of neuron:{0}".format(NeuronID)
                 return
+            elif ObjType in ["mesh"]: #clicked on soma
+                obj=self.ariadne.Neurons[NeuronID].children[ObjType]
+ #               nodeId=obj.pointIdx2nodeId(0)
+                Point,nodeId=obj.get_closest_point(PickedPoint)
+                self.SetActiveObj(ObjType,NeuronID,nodeId)
+                print "neuronID: {0}, Location: {1} ".format(NeuronID,Point)
+#                print "soma of neuron:{0}".format(NeuronID)
+                return            
             elif ObjType=="skeleton": #clicked on skeleton    
                 if self.TagMode and activeRenderer._AllowTagging:
                     return
@@ -6311,6 +6327,146 @@ class soma(objs):
 #        self.labelactor.SetMapper(self.labelmapper);
                 
         self.initialized[0]=True
+
+class mesh(soma):
+    objtype="mesh"
+    maxNofColors=[2000]
+    DefaultAlpha=[100]
+    activityFlag=0
+
+    initialized = [False]
+    VisEngine_started=[False]
+    
+    viewports=list()
+    
+    allData= vtk.vtkAppendFilter()    
+    
+    mapper=vtk.vtkMapperCollection()
+    actor=vtk.vtkActorCollection()
+
+    ClippingPlanes=[] 
+    ClippingActors=[]
+    clippedmapper=vtk.vtkMapperCollection()
+    clippedactor=vtk.vtkActorCollection()    
+    
+    allLabels= vtk.vtkAppendFilter()    
+    labelmapper=vtk.vtkCollection()
+    labelactor=vtk.vtkActor2DCollection()
+    VisibleLabels = vtk.vtkCollection()
+#    labelmapper=vtk.vtkLabeledDataMapper()
+#    labelactor=vtk.vtkActor2D()
+
+    LUT=vtk.vtkLookupTable()
+    instancecount=[0]
+    
+    def set_nodes(self,tempMesh,NodeID=None):
+        self.data.DeepCopy(tempMesh)     
+        self.data.Modified()
+
+        ObjType = vtk.vtkStringArray()
+        ObjType.SetName("ObjType")
+        ObjType.SetNumberOfValues(1)
+        ObjType.SetValue(0,self.objtype)        
+        self.data.GetFieldData().AddArray(ObjType)       
+        
+        points=self.data.GetPoints()
+        NNodes=points.GetNumberOfPoints()
+       
+        colors=self.colorIdx*np.ones([NNodes,1],dtype=np.float)
+        PointColor=self.data.GetPointData().GetArray("PointColor")
+        if not PointColor:
+            PointColor = vtk.vtkFloatArray()
+            PointColor.SetName("PointColor")
+            PointColor.SetNumberOfComponents(1)
+            self.data.GetPointData().SetScalars(PointColor)
+
+        PointColor.DeepCopy(numpy_to_vtk(colors, deep=1, array_type=vtk.VTK_FLOAT))
+        PointColor.Modified()
+        
+        neuronID=self.NeuronID*np.ones([NNodes,1],dtype=np.float32)
+        NeuronID=self.data.GetPointData().GetArray("NeuronID")
+        if not NeuronID:
+            NeuronID=vtk.vtkFloatArray()
+            NeuronID.SetName("NeuronID")
+            NeuronID.SetNumberOfComponents(1)
+            self.data.GetPointData().AddArray(NeuronID)        
+            
+        NeuronID.DeepCopy(numpy_to_vtk(neuronID, deep=1, array_type=vtk.VTK_FLOAT))
+        NeuronID.Modified()
+        
+        NodeIDArray=self.data.GetPointData().GetArray("NodeID") 
+        if not NodeIDArray:
+            NodeIDArray = vtk.vtkIdTypeArray()
+            NodeIDArray.SetName("NodeID")
+            self.data.GetPointData().AddArray(NodeIDArray)
+            
+        if NodeID==None:
+            NodeID=np.array(range(NNodes),dtype=np.int)      
+        
+        if not (NodeID.__class__.__name__=='vtkIdTypeArray' or NodeID.__class__.__name__=='vtkIntArray' or NodeID.__class__.__name__=='vtkLongArray' or NodeID.__class__.__name__=='vtkLongLongArray'): 
+            if not NodeID.__class__.__name__=='ndarray':
+                NodeID=np.array([NodeID],dtype=np.int)
+            
+            NodeID=numpy_to_vtk(NodeID, deep=1, array_type=vtk.VTK_ID_TYPE)
+        else:
+            if NodeID.GetNumberOfTuples()>0:
+                NodeID=numpy_to_vtk(vtk_to_numpy(NodeID), deep=1, array_type=vtk.VTK_ID_TYPE)
+            else:
+                1
+        NodeIDArray.DeepCopy(NodeID)
+        NodeIDArray.Modified()
+              
+
+        center=self.data.GetCenter()
+        print "center: ", center
+        return center
+                          
+    def setup_VisEngine(self):
+        self.data = vtk.vtkPolyData()
+        self.data.Allocate()
+        
+        ObjType = vtk.vtkStringArray()
+        ObjType.SetName("ObjType")
+        ObjType.SetNumberOfValues(1)
+        ObjType.SetValue(0,self.objtype)        
+        self.data.GetFieldData().AddArray(ObjType)       
+
+        PointColor = vtk.vtkFloatArray()
+        PointColor.SetName("PointColor")
+        PointColor.SetNumberOfComponents(1)
+        self.data.GetPointData().SetScalars(PointColor)
+
+        NeuronID=vtk.vtkFloatArray()
+        NeuronID.SetName("NeuronID")
+        NeuronID.SetNumberOfComponents(1)
+        self.data.GetPointData().AddArray(NeuronID)
+
+        NodeID = vtk.vtkIdTypeArray()
+        NodeID.SetName("NodeID")
+        self.data.GetPointData().AddArray(NodeID)
+        
+        smoothingIterations = 10;
+        featureAngle = 60.0;
+        self.Smoother = vtk.vtkWindowedSincPolyDataFilter()
+        self.Smoother=vtk.vtkWindowedSincPolyDataFilter()
+        self.Smoother.SetInputConnection(self.data.GetProducerPort())
+        self.Smoother.SetNumberOfIterations(smoothingIterations);
+        self.Smoother.BoundarySmoothingOff();
+        self.Smoother.FeatureEdgeSmoothingOff();
+        self.Smoother.SetFeatureAngle(featureAngle);
+        self.Smoother.NonManifoldSmoothingOn();
+        self.Smoother.NormalizeCoordinatesOn();
+                
+        self.Smoother.ReleaseDataFlagOn()
+
+        self.visibleData  = self.Smoother      
+        self.allDataInput = self.visibleData
+       
+        self.allData.AddInputConnection(0,self.allDataInput.GetOutputPort())        
+        self.allData.Modified()
+
+        self.PointLocator=vtk.vtkPointLocator()
+    
 
 class region(soma):
     objtype="region"
@@ -10281,7 +10437,7 @@ class ARIADNE(QtGui.QMainWindow):
         self.JumpToPoint()
 
     def ChangeNeuronVisMode(self,placeholder=-1,doRender=True):
-        allobjs=[skeleton,synapse,tag,soma,region]
+        allobjs=[skeleton,synapse,tag,soma,region,mesh]
         if self.radioBtn_showall.isChecked():
             visibleNeurons=self.Neurons.keys()    
             hiddenNeurons=list()
@@ -11152,7 +11308,7 @@ class ARIADNE(QtGui.QMainWindow):
     def Open(self,filename=None,LoadingMode=None,SilentMode=0,UpdateCurrentFile=1):
         InitializeJob=UpdateCurrentFile;
         
-        fileext="*.nmx *.amx *.txt *.csv *.mat *.nml *.aml *.ddx"
+        fileext="*.nmx *.amx *.txt *.csv *.mat *.nml *.aml *.ddx *.obj"
         if filename==None:
             if not self.CurrentFile and self.Filelist.__len__()>0:
                 currentPath= os.path.split(unicode(self.Filelist[0]._File))
@@ -11242,8 +11398,13 @@ class ARIADNE(QtGui.QMainWindow):
                 ifile+=1
 
             filename=unicode(filename)
+            
+            if filename.endswith(".obj"):
+                filename=unicode(filename)
+                tempNeurons,SelObj,editPosition=self.LoadObjFile(filename)
+                Neurons.update(tempNeurons)                
 #            try:
-            if filename.endswith(".ddx"):
+            elif filename.endswith(".ddx"):
                 filename=unicode(filename)
                 if filename in self.DemDriFiles:
                     continue
@@ -11422,7 +11583,7 @@ class ARIADNE(QtGui.QMainWindow):
             self.ChangePlaneVisMode()
             self.ChangeBorderVisMode()
 
-            for obj in [neuron,skeleton,synapse,soma,region,tag]:
+            for obj in [neuron,skeleton,synapse,soma,region,tag,mesh]:
                 obj.start_VisEngine(self)
 
             self.SetSomaVisibility()
@@ -12114,6 +12275,33 @@ class ARIADNE(QtGui.QMainWindow):
         writer.SetFileName(filename);
         writer.SetInput(allData);
         writer.Write();
+        
+    def LoadObjFile(self,origfilename):
+        reader=vtk.vtkOBJReader()
+        reader.SetFileName(origfilename)
+        reader.Update()
+        tempMesh=reader.GetOutput()
+        if (not tempMesh):
+            print "Could not read file: ", origfilename
+            return
+
+        #new neuron
+        if self.Neurons.__len__()>0:
+            NeuronID=float(int(max(self.Neurons.keys()))+1)
+        else:
+            NeuronID=0.0
+        color=self.get_autocolor(self.Neurons.keys().__len__())
+
+        Neurons=OrderedDict()
+        Neurons[NeuronID]=neuron(self.ObjectBrowser.model(),NeuronID,color)
+        obj=mesh(Neurons[NeuronID].item,NeuronID,color)
+        center=obj.set_nodes(tempMesh)
+        Neurons[NeuronID].children["mesh"]=obj
+        SelObj=[None,None,None]
+
+        editPosition=[center[0]/self.DataScale[0],center[1]/self.DataScale[1],center[2]/self.DataScale[2]]
+        
+        return Neurons,SelObj,editPosition
 
     def LoadXMLFile(self,origfilename):
         reader=vtk.vtkXMLMultiBlockDataReader()
@@ -12930,9 +13118,9 @@ class ARIADNE(QtGui.QMainWindow):
         self.ObjectBrowser.setSelectionMode(oldMode)
         if anyupdate:
             self.ChangeNeuronVisMode(-1,False)
-            for obj in [neuron,skeleton,synapse,soma,region,tag]:
+            for obj in [neuron,skeleton,synapse,soma,region,tag,mesh]:
                 obj.start_VisEngine(self)
-            for obj in [soma,region]:
+            for obj in [soma,region,mesh]:
                 obj.update_VisEngine()
 #            print "Demand-driven update time: ", time.time()-startTime
                         
