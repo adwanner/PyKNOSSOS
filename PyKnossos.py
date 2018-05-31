@@ -22,6 +22,7 @@
 #Installation with spyder on Ubuntu 16.04.3 LTS (Xenial Xerus) 64-bit:
 #sudo apt-get install spyder
 #sudo apt-get install libvtk5-dev python-vtk
+#pip install ConfigObj
 #copy QxtSpanSlider.py and images2gif.py from the sources above into the PyKnossos.py folder
 
 #developer switches
@@ -1035,10 +1036,10 @@ class Loader:
         for idx in range(self.DataScale.__len__()/3):
 #            if maxROIEdge*1.2<self.ShortestEdge[idx]:
             #sqrt(2)*arbitrary_orientation_diagonal=shortest_hypercube_edge 
-            #CubeRes=min([self.DataScale[idx*3],self.DataScale[idx*3+1],self.DataScale[idx*3+2]])
-            CubeRes=np.sqrt(self.DataScale[idx*3]*self.DataScale[idx*3]+\
-                self.DataScale[idx*3+1]*self.DataScale[idx*3+1]+\
-                self.DataScale[idx*3+2]*self.DataScale[idx*3+2])
+            CubeRes=min([self.DataScale[idx*3],self.DataScale[idx*3+1],self.DataScale[idx*3+2]])
+            #CubeRes=np.sqrt(self.DataScale[idx*3]*self.DataScale[idx*3]+\
+            #    self.DataScale[idx*3+1]*self.DataScale[idx*3+1]+\
+            #    self.DataScale[idx*3+2]*self.DataScale[idx*3+2])
             if np.round(maxROIEdge,3)<=np.round(self.InterPolFactor*CubeRes,3):
                 break;
 
