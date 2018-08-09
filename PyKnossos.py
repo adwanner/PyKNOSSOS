@@ -36,7 +36,7 @@ experimental=1 #show experimental features (false if usermode==1)
 encryptionkey='EncryptPyKnossos';
 #AES key must be either 16, 24, or 32 bytes long
 
-PyKNOSSOS_VERSION='PyKNOSSOS2.320170215'
+PyKNOSSOS_VERSION='PyKNOSSOS18.0616'
 
 if usermode==1:
     experimental=0
@@ -3745,9 +3745,16 @@ class QRenWin(QtGui.QWidget):
                 ObjType=ObjType.GetValue(0)
             
             tempArray=DataSet.GetPointData().GetArray("NeuronID")
-            if tempArray==None:
+            if not tempArray==None:
+                NeuronID=float(np.round(tempArray.GetValue(PointID),3))
+            else:
+                tempArray=DataSet.GetFieldData().GetArray("NeuronID")
+                if not tempArray==None:
+                    NeuronID=float(np.round(tempArray.GetValue(0),3))
+                
+            if tempArray==None:    
                 return
-            NeuronID=float(np.round(tempArray.GetValue(PointID),3))
+            
             if NeuronID==None:
                 return
                 
@@ -4932,10 +4939,15 @@ class objs():
         self.NeuronID=neuronId
         if hasattr(self,'data'):
             if not (not self.data):    
-                NNodes=self.data.GetNumberOfPoints()
-                neuronID=self.NeuronID*np.ones([NNodes,1],dtype=np.float32)
                 NeuronID=self.data.GetPointData().GetArray("NeuronID")
-                NeuronID.DeepCopy(numpy_to_vtk(neuronID, deep=1, array_type=vtk.VTK_FLOAT))
+                if not (not NeuronID):
+                    NNodes=self.data.GetNumberOfPoints()
+                    neuronID=self.NeuronID*np.ones([NNodes,1],dtype=np.float32)
+                    NeuronID.DeepCopy(numpy_to_vtk(neuronID, deep=1, array_type=vtk.VTK_FLOAT))
+                else:
+                    NeuronID=self.data.GetFieldData().GetArray("NeuronID")
+                    NeuronID.SetValue(0,self.NeuronID) 
+                
                 NeuronID.Modified()
 
         if hasattr(self,'item'):
@@ -6372,27 +6384,37 @@ class mesh(soma):
         
         points=self.data.GetPoints()
         NNodes=points.GetNumberOfPoints()
+
+        PointColor = vtk.vtkUnsignedIntArray()
+        PointColor.SetName("PointColor")
+        PointColor.SetNumberOfComponents(1)
        
-        colors=self.colorIdx*np.ones([NNodes,1],dtype=np.float)
+        colors=self.colorIdx*np.ones([NNodes,1],dtype=np.uint16)
         PointColor=self.data.GetPointData().GetArray("PointColor")
         if not PointColor:
-            PointColor = vtk.vtkFloatArray()
+            PointColor = vtk.vtkUnsignedIntArray()
             PointColor.SetName("PointColor")
             PointColor.SetNumberOfComponents(1)
             self.data.GetPointData().SetScalars(PointColor)
 
-        PointColor.DeepCopy(numpy_to_vtk(colors, deep=1, array_type=vtk.VTK_FLOAT))
+        PointColor.DeepCopy(numpy_to_vtk(colors, deep=1, array_type=vtk.VTK_TYPE_UINT16))
         PointColor.Modified()
-        
-        neuronID=self.NeuronID*np.ones([NNodes,1],dtype=np.float32)
-        NeuronID=self.data.GetPointData().GetArray("NeuronID")
+#        
+#        neuronID=self.NeuronID*np.ones([NNodes,1],dtype=np.float32)
+#        NeuronID=self.data.GetPointData().GetArray("NeuronID")
+        NeuronID=self.data.GetFieldData().GetArray("NeuronID")
         if not NeuronID:
             NeuronID=vtk.vtkFloatArray()
             NeuronID.SetName("NeuronID")
-            NeuronID.SetNumberOfComponents(1)
-            self.data.GetPointData().AddArray(NeuronID)        
-            
-        NeuronID.DeepCopy(numpy_to_vtk(neuronID, deep=1, array_type=vtk.VTK_FLOAT))
+            NeuronID.SetNumberOfValues(1)
+            NeuronID.SetValue(0,-1)        
+            self.data.GetFieldData().AddArray(NeuronID)        
+#            NeuronID=vtk.vtkFloatArray()
+#            NeuronID.SetName("NeuronID")
+#            NeuronID.SetNumberOfComponents(1)
+#            self.data.GetPointData().AddArray(NeuronID)        
+        NeuronID=self.data.GetFieldData().GetArray("NeuronID")
+        NeuronID.SetValue(0,self.NeuronID)    
         NeuronID.Modified()
         
         NodeIDArray=self.data.GetPointData().GetArray("NodeID") 
@@ -6432,15 +6454,20 @@ class mesh(soma):
         ObjType.SetValue(0,self.objtype)        
         self.data.GetFieldData().AddArray(ObjType)       
 
-        PointColor = vtk.vtkFloatArray()
+#        PointColor = vtk.vtkFloatArray()
+        PointColor = vtk.vtkUnsignedIntArray()
         PointColor.SetName("PointColor")
         PointColor.SetNumberOfComponents(1)
         self.data.GetPointData().SetScalars(PointColor)
 
         NeuronID=vtk.vtkFloatArray()
         NeuronID.SetName("NeuronID")
-        NeuronID.SetNumberOfComponents(1)
-        self.data.GetPointData().AddArray(NeuronID)
+        NeuronID.SetNumberOfValues(1)
+        NeuronID.SetValue(0,-1)        
+        self.data.GetFieldData().AddArray(NeuronID)       
+        
+#        NeuronID.SetNumberOfComponents(1)
+#        self.data.GetPointData().AddArray(NeuronID)
 
         NodeID = vtk.vtkIdTypeArray()
         NodeID.SetName("NodeID")
@@ -9945,7 +9972,7 @@ class ARIADNE(QtGui.QMainWindow):
             color=self.Neurons[NeuronID].LUT.GetTableValue(\
                 self.Neurons[NeuronID].colorIdx)
             obj=skeleton(self.Neurons[NeuronID].item,NeuronID,color)
-            self.Neurons[newNeuronID].children["skeleton"]=obj
+            self.Neurons[NeuronID].children["skeleton"]=obj
         else:           
             obj=self.Neurons[NeuronID].children["skeleton"]
         
@@ -11309,7 +11336,7 @@ class ARIADNE(QtGui.QMainWindow):
     def Open(self,filename=None,LoadingMode=None,SilentMode=0,UpdateCurrentFile=1):
         InitializeJob=UpdateCurrentFile;
         
-        fileext="*.nmx *.amx *.txt *.csv *.mat *.nml *.aml *.ddx *.obj"
+        fileext="*.nmx *.amx *.txt *.csv *.mat *.nml *.aml *.ddx *.obj *.ply *.swc *.k.zip"
         if filename==None:
             if not self.CurrentFile and self.Filelist.__len__()>0:
                 currentPath= os.path.split(unicode(self.Filelist[0]._File))
@@ -11399,10 +11426,25 @@ class ARIADNE(QtGui.QMainWindow):
                 ifile+=1
 
             filename=unicode(filename)
-            
-            if filename.endswith(".obj"):
+            if filename.endswith(".swc"):
                 filename=unicode(filename)
-                tempNeurons,SelObj,editPosition=self.LoadObjFile(filename)
+                tempNeurons,SelObj,editPosition,dataset=self.LoadSWCFile(filename,Neurons)
+                for NeuronID, neuron_obj in tempNeurons.iteritems():
+                    if NeuronID in Neurons:
+                        oldNeuronID=NeuronID
+                        step=1
+                        while Neurons.has_key(NeuronID):
+                            NeuronID=oldNeuronID+step*0.001
+                            NeuronID=float(np.round(NeuronID,3))
+                            step+=1
+    
+                        print "tree id: {0}".format(NeuronID)
+                        neuron_obj.set_new_neuronId(NeuronID)
+                    if not (not neuron_obj):
+                        Neurons[NeuronID]=neuron_obj            
+            elif filename.endswith(".obj") or filename.endswith(".ply") :
+                filename=unicode(filename)
+                tempNeurons,SelObj,editPosition=self.LoadMeshFile(filename)
                 if not tempNeurons:
                     print "Could not load file: ", filename
                     continue
@@ -11428,7 +11470,7 @@ class ARIADNE(QtGui.QMainWindow):
                     dataset=ddfobj._Dataset
                     self.DemDriFiles[filename]=ddfobj
 
-            elif filename.endswith(".nmx"):
+            elif filename.endswith(".nmx") or filename.endswith(".k.zip"):
                 filename=unicode(filename)
                 tempNeurons,SelObj,editPosition,dataset=self.LoadNMXFile(filename)
                 for NeuronID, neuron_obj in tempNeurons.iteritems():
@@ -11464,7 +11506,7 @@ class ARIADNE(QtGui.QMainWindow):
                 filename=unicode(filename)
                 tempNeurons,SelObj=self.LoadXMLFile(filename)
                 Neurons.update(tempNeurons)
-            elif filename.endswith(".nml"):
+            elif filename.endswith(".nml") or filename.endswith(".xml"):
                 filename=unicode(filename)
                 tempNeurons,SelObj,editPosition,dataset=self.LoadNMLFile(filename,parseflags=0)
                 for NeuronID, neuron_obj in tempNeurons.iteritems():
@@ -12291,8 +12333,12 @@ class ARIADNE(QtGui.QMainWindow):
         writer.SetInput(allData);
         writer.Write();
         
-    def LoadObjFile(self,origfilename):
-        reader=vtk.vtkOBJReader()
+    def LoadMeshFile(self,origfilename):
+        if origfilename.endswith(".obj"): 
+            reader=vtk.vtkOBJReader()
+        if origfilename.endswith(".ply"): 
+            reader=vtk.vtkPLYReader()
+
         reader.SetFileName(origfilename)
         reader.Update()
         tempMesh=reader.GetOutput()
@@ -12526,7 +12572,7 @@ class ARIADNE(QtGui.QMainWindow):
     def LoadNMXFile(self,origfilename,convertflag=False):
         if not origfilename:
             return
-        if not origfilename.endswith('.nmx'):
+        if not (origfilename.endswith('.nmx') or origfilename.endswith('.k.zip')):
             return
         basepath, basename = os.path.split(origfilename)
         basename, ext = os.path.splitext(basename)
@@ -12569,6 +12615,8 @@ class ARIADNE(QtGui.QMainWindow):
         jobfiles= []
         for root, dirnames, filenames in os.walk(tempdir):
           for filename in fnmatch.filter(filenames, '*.nml'):
+              filelist.append(os.path.join(root, filename))
+          for filename in fnmatch.filter(filenames, '*.xml'):
               filelist.append(os.path.join(root, filename))
           for filename in fnmatch.filter(filenames, '*.txt'):
               txtfilelist.append(os.path.join(root, filename))
@@ -12900,7 +12948,157 @@ class ARIADNE(QtGui.QMainWindow):
             text_file.write(prettystring)
             text_file.close()
                 
-   
+    def LoadSWCFile(self,origfilename,tempNeurons=OrderedDict()):
+        scale=[1.0,1.0,1.0]
+        scale=[114.0,114.0,280.0]
+        ineuron=self.Neurons.__len__()
+        color=self.get_autocolor(ineuron)
+        obj_comment=unicode("")
+        NeuronID=-1
+        for neuronId, obj in self.Neurons.iteritems():
+            NeuronID=max(int(obj.NeuronID),NeuronID)
+        for neuronId, obj in tempNeurons.iteritems():
+            NeuronID=max(int(obj.NeuronID),NeuronID)
+        
+        NeuronID+=1
+        
+        NeuronID=self.NewNeuron()
+        Neurons=OrderedDict()
+        timerOffset=self.Timer.timerOffset
+        data={}
+        with open(origfilename, 'r') as fid:
+            for line in fid:
+                if line[0] == '#':
+                    if 'SCALE' in line:
+                        record = line.split(' ')
+                        if record[1] == 'SCALE':
+                            scale[0] = float(record[2])
+                            scale[1] = float(record[3])
+                            scale[2] = float(record[4])
+                        else:
+                            scale[0] = float(record[1])
+                            scale[1] = float(record[2])
+                            scale[2] = float(record[3])
+                    if 'NeuronID' in line:
+                        record = line.split(' ')
+                        if record[1] == 'NeuronID':
+                            NeuronID=record[2]
+                        else:
+                            NeuronID=record[1]
+                            
+                        try:
+                            NeuronID=float(np.round(float(NeuronID),3))
+                        except:
+                            NeuronID=float(np.round(NeuronID.astype('float'),3))
+                    if 'COLOR' in line:
+                        record = line.split(' ')
+                        if record[1] == 'COLOR':
+                            color[0] = float(record[2])
+                            color[1] = float(record[3])
+                            color[2] = float(record[4])
+                            color[3] = float(record[5])
+                        else:
+                            color[0] = float(record[1])
+                            color[1] = float(record[2])
+                            color[2] = float(record[3])
+                            color[3] = float(record[4])
+                    if 'COMMENT' in line:
+                        record = line.split(' ')
+                        if record[1] == 'COMMENT':
+                            obj_comment=record[2]
+                        else:
+                            obj_comment=record[1]
+                        obj_comment=unicode(obj_comment)
+
+                elif len(line) > 1:
+                    record = line.strip().split(' ')
+
+                    one_data = {'id': int(record[0]),
+                                'type': int(record[1]),
+                                'pos': [float(record[2]), float(record[3]),
+                                        float(record[4])],
+                                'radius': float(record[5]),
+                                'parent': int(record[6])}
+                    data[int(record[0])] = one_data
+
+        oldNeuronID=NeuronID
+        step=1
+        while self.Neurons.has_key(NeuronID):
+            NeuronID=oldNeuronID+step*0.001
+            NeuronID=float(np.round(NeuronID,3))
+            step+=1
+
+            
+        Neurons[NeuronID]=neuron(self.ObjectBrowser.model(),NeuronID,color)
+        child=skeleton(Neurons[NeuronID].item,NeuronID,color)
+            
+        if not (not obj_comment):
+            if not (obj_comment=='None' or obj_comment=='NONE'):
+                child.comments.set(child,"comment",obj_comment)
+                child.updateItem()
+            
+        NodeID=vtk.vtkIdTypeArray()
+        Points=vtk.vtkPoints()
+        NNodes= data.__len__()
+        Points.SetNumberOfPoints(NNodes)
+        inode=0;
+        for nodeId,nodeobj in data.iteritems():
+            NodeID.InsertNextValue(np.int((nodeId)))
+            Points.SetPoint(inode,\
+            np.float(nodeobj['pos'][0])*np.float(scale[0]),\
+            np.float(nodeobj['pos'][1])*np.float(scale[1]),\
+            np.float(nodeobj['pos'][2])*np.float(scale[2]))    
+            inode+=1;
+            radius=nodeobj['radius']
+            if not (radius.__class__.__name__=='float' or radius.__class__.__name__=='int' or radius.__class__.__name__=='double'):
+                if radius.size==0:
+                    continue
+            child.comments.set(\
+            nodeId,'radius',np.float(radius))
+        NodeID.ClearLookup()
+
+        tempPolyData=vtk.vtkPolyData()
+        tempPolyData.Allocate()
+        tempPolyData.SetPoints(Points)
+        Edges2PolyLines=vtk.vtkStripper()
+        tempEdge=vtk.vtkIdList()
+        tempEdge.SetNumberOfIds(2)
+        #try:
+        for nodeId,nodeobj in data.iteritems():
+            sourceID=NodeID.LookupValue(int(nodeobj['parent']))
+            targetID=NodeID.LookupValue(int(nodeId))
+            if sourceID==targetID:
+                continue
+            elif sourceID==-1 or targetID==-1:
+                continue
+            tempEdge.SetId(0,sourceID)
+            tempEdge.SetId(1,targetID)
+            tempPolyData.InsertNextCell(vtk.VTK_LINE,tempEdge)                
+        tempPolyData.BuildCells()
+
+        tempPolyData.Modified()
+        if tempPolyData.GetNumberOfCells()>0:
+            Edges2PolyLines.SetInputConnection(tempPolyData.GetProducerPort())
+            Edges2PolyLines.Update()
+            tempCells=Edges2PolyLines.GetOutput().GetLines()
+        else:
+            tempCells=None
+     
+        #except:
+        #    tempCells=None;
+
+        child.set_nodes(Points,NodeID)
+        if not tempCells==None:
+            child.add_branch(tempCells,'Lines',1)
+
+        Neurons[NeuronID].children["skeleton"]=child
+        self.Timer.timerOffset=timerOffset
+
+        for neuronId, neuron_obj in Neurons.iteritems():
+            neuron_obj.filename=origfilename
+
+        return Neurons, None, None, None
+                
     def LoadCSVFile(self,filename):
         print "load csv file with node coordinates."
         print "assume coordinate order: Z (plane), Y, X"
@@ -13620,11 +13818,12 @@ class ARIADNE(QtGui.QMainWindow):
                         if not value=="":
                             obj.comments.set(nodeId,'comment',value)
 
-        Edges2PolyLines=vtk.vtkStripper()
-        tempEdge=vtk.vtkIdList()
-        tempEdge.SetNumberOfIds(2)
         for neuronId,neuron_obj in Neurons.iteritems():
             for objtype,obj in neuron_obj.children.iteritems():
+                Edges2PolyLines=vtk.vtkStripper()
+                tempEdge=vtk.vtkIdList()
+                tempEdge.SetNumberOfIds(2)
+
                 NodeID=tempData[neuronId][objtype]["NodeID"]
                 NodeID.ClearLookup()
                 Points=tempData[neuronId][objtype]["Points"]
