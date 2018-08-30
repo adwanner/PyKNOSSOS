@@ -36,7 +36,7 @@ experimental=1 #show experimental features (false if usermode==1)
 encryptionkey='EncryptPyKnossos';
 #AES key must be either 16, 24, or 32 bytes long
 
-PyKNOSSOS_VERSION='PyKNOSSOS18.0616'
+PyKNOSSOS_VERSION='PyKNOSSOS180821'
 
 if usermode==1:
     experimental=0
@@ -63,6 +63,9 @@ if not sip.getapi('QString')==1:
 
 
 import sys
+#dirty hack, shame on the sloppy but pragmatic programmer:
+reload(sys)
+sys.setdefaultencoding('UTF8')
 
 from QxtSpanSlider import QxtSpanSlider
 import vtk
@@ -85,6 +88,7 @@ if usermode==0:
 import numpy as np
 from vtk.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 import os
+import ntpath
 import itertools
 import re
 import zipfile
@@ -249,14 +253,15 @@ if win:
     maxContRAMBlock=5*5*5*128*128*128+1; #On windows we are limited by 32bit
     #Note: The number of cubes in memory: NCubesInMemory= 3 * NCubesPerEdge^3
     #Memory usage: NCubesInMemory*CubeSize^3
-    print application_path;
     temp_dir='';
     lib_path=os.path.join(temp_dir,r"loaderlib.dll")
+    print 'loading: ' + lib_path;
     loaderlib = cdll.LoadLibrary(lib_path)
     lib_path=os.path.join(temp_dir,r"extractROIlib.dll")
+    print 'loading: ' + lib_path;
     extractROIlib = cdll.LoadLibrary(lib_path)
 else:
-    maxContRAMBlock=9*9*9*128*128*128+1; #No real limit, but 10 is already a lot...
+    maxContRAMBlock=7*7*7*128*128*128+1; #No real limit, but 10 is already a lot...
     #Note: The number of cubes in memory = 3 * NCubesPerEdge^3
     #Memory usage: NCubesInMemory*CubeSize^3
     loaderlib = cdll.LoadLibrary(os.path.join(application_path, r"clibraries/loaderlib.so"))
@@ -1521,6 +1526,9 @@ class timer(QtCore.QTimer):
                 self.qt_idle_time.setText("Idle: %02d:%02d:%02d" % (h, m, s))
 
 class config(ConfigObj):  
+    def __init__(self,configfile):
+        ConfigObj.__init__(self,configfile, encoding="utf-8-sig")
+
     def LoadConfig(self,obj,SectionName=None):
         if SectionName==None:
             SectionName=obj.__class__.__name__
@@ -1671,7 +1679,7 @@ class config(ConfigObj):
 class job(config):
     _Dataset=''
     def __init__(self,ariadne,jobfile=None):
-        config.__init__(self,jobfile, encoding='UTF8')
+        config.__init__(self,jobfile)
         self.ariadne=ariadne
         self.tasks=[]
         self._taskIdx=-1
@@ -1693,6 +1701,8 @@ class job(config):
             tasktype=self[taskname]["_tasktype"]
             if tasktype=="synapse_detection":
                 temptask=synapse_detection(self.ariadne)
+            elif tasktype=="proofreading":
+                temptask=proofreading(self.ariadne)
             elif tasktype=="tracing":
                 temptask=tracing(self.ariadne)
             else:
@@ -1806,7 +1816,7 @@ class task():
         self._currNodeId=-1
         self._neuronId=None
 
-        self._enabled_workmodes=["TagMode","SynMode","TracingMode","BrowsingMode"]
+        self._enabled_workmodes=["TagMode","SynMode","ProofreadingMode","TracingMode","BrowsingMode"]
         self._curr_workmode="BrowsingMode"
 
         self.init_task()
@@ -1834,6 +1844,7 @@ class task():
             self.ariadne.radioBtn_Tracing.setEnabled("TracingMode" in self._enabled_workmodes)
             self.ariadne.radioBtn_Tagging.setEnabled("TagMode" in self._enabled_workmodes)
             self.ariadne.radioBtn_Synapses.setEnabled("SynMode" in self._enabled_workmodes)
+            self.ariadne.radioBtn_Synapses.setEnabled("ProofreadingMode" in self._enabled_workmodes)
         
         if self._curr_workmode=="BrowsingMode":
             self.ariadne.radioBtn_Browsing.setChecked(True)
@@ -1843,6 +1854,8 @@ class task():
             self.ariadne.radioBtn_Tagging.setChecked(True)
         elif self._curr_workmode=="SynMode":
             self.ariadne.radioBtn_Synapses.setChecked(True)
+        elif self._curr_workmode=="ProofreadingMode":
+            self.ariadne.radioBtn_Proofreading.setChecked(True)
 
 class synapse_detection(task):
     _task_description="Synapse detection. Follow the branch using the scroll wheel or up/down keys. At each synaptic site mark the post-synaptic density with a first click. If the post-synaptic process has been traced, mark the closest node of this process with a second click. Else just mark the center of the post-synaptic process by the second click."
@@ -2001,6 +2014,7 @@ class synapse_detection(task):
             return
         pathId=self._currPathId
         pathId+=dstep
+        pathId = np.int(pathId)
         success,dt=self.GotoPathId(pathId)
 
         if success>-1:
@@ -2199,6 +2213,24 @@ class synapse_detection(task):
         self.cDir=np.delete(self.cDir,todelete,0)
         self.hDir=np.delete(self.hDir,todelete,0)
         self.pathPt=np.delete(self.pathPt,todelete,0)
+        
+        
+class proofreading(synapse_detection):
+    _task_description="Skeleton proofreading. Follow neurites along pre-defined paths using the F/D keys. To browse in the data viewports use the arrow up/down keys. Mark wrong branches and stretches with 'w' and mark missed branches with 'm'. Use 'Page Up' and 'Page Down' to jump to the next/previous task."
+    _ReferenceData=""
+
+    def init_task(self):
+        self._sequence=[]
+        self._sequenceType=""
+        self._enabled_workmodes=["ProofreadingMode","BrowsingMode","TracingMode"]
+        self._curr_workmode="ProofreadingMode"
+
+        self._currPathId=-1        
+        self.cDir=None
+        self.vDir=None
+        self.hDir=None
+        self.pathPt=None
+        self.locator=None
 
 class tracing(task):
     _task_description="Tracing. Follow untraced branches and put nodes in the center of the process."
@@ -2984,7 +3016,10 @@ class viewport(vtk.vtkRenderer):
         FocalPoint=np.array(self.Camera.GetFocalPoint(),dtype=np.float)
         Scale=np.max(self.ariadne.DataScale)
         if Direction=="Z":
-            FocalPoint[2]+=dstep*Scale
+            if self.ariadne.ckbx_SingleSectionZStep.isChecked():
+                FocalPoint[2]+=np.sign(dstep)*self.ariadne.DataScale[2]
+            else:
+                FocalPoint[2]+=dstep*Scale
         elif Direction=="Y":
             FocalPoint[1]+=dstep*Scale
         elif Direction=="X":
@@ -3052,6 +3087,7 @@ class QRenWin(QtGui.QWidget):
         self.viewports={}
 
         self.TagMode=0
+        self.ProofreadingMode=0
         self.SynMode=0
         self.TracingMode=0
         self.SynZoom=0
@@ -3332,11 +3368,24 @@ class QRenWin(QtGui.QWidget):
             pointIdx=obj.nodeId2pointIdx(nodeId)
             if  pointIdx>-1:
                 Point=obj.data.GetPoint(pointIdx)
-                if self.TracingMode and not (not self.ariadne.job):
+                if (self.TracingMode or self.ProofreadingMode) and not (not self.ariadne.job):
                     currTask=self.ariadne.job.get_current_task()
                     if not (not currTask):
-                        if currTask._tasktype=="tracing" and currTask._neuronId==NeuronID:
+                        if currTask._tasktype=="tracing" and float(currTask._neuronId)==NeuronID:
                             currTask._currNodeId=nodeId
+#                        if currTask._tasktype=="proofreading":
+#                            if nodeId in currTask._sequence  and float(currTask._neuronId)==NeuronID:
+#                                currTask.GotoNodeId(nodeId)
+#                            else:
+#                                for tempTask in self.ariadne.job.tasks:
+#                                    if not float(tempTask._neuronId)==NeuronID:
+#                                        continue
+#                                    if not nodeId in tempTask._sequence:
+#                                        continue
+#                                    taskIdx=self.ariadne.job.tasks.index(tempTask)
+#                                    self.ariadne.job.goto_task(taskIdx)
+#                                    tempTask.GotoNodeId(nodeId)
+#                                    break
 
         elif ObjType=="synapse":
             tagIdx=obj.nodeId2tagIdx(nodeId)
@@ -4431,7 +4480,7 @@ class QRenWin(QtGui.QWidget):
             else:
                 return
         elif key==QtCore.Qt.Key_F:
-            if self.SynMode:
+            if self.SynMode or self.ProofreadingMode:
                 if self.activeRenderer._Orientation=="arbitrary":
                     return
                 if (not self.ariadne.job):
@@ -4440,6 +4489,8 @@ class QRenWin(QtGui.QWidget):
                 if currTask==None:
                     return
                 if currTask._tasktype=="synapse_detection":
+                    currTask.MoveAlongPath(1*self.ariadne.SpinBoxSpeed.value()*CubeLoader.Magnification[0])
+                if currTask._tasktype=="proofreading":
                     currTask.MoveAlongPath(1*self.ariadne.SpinBoxSpeed.value()*CubeLoader.Magnification[0])
             else:
                 if self.activeRenderer._Orientation=="orthogonal":
@@ -4477,7 +4528,7 @@ class QRenWin(QtGui.QWidget):
             else:
                 return
         elif key==QtCore.Qt.Key_D:
-            if self.SynMode:
+            if self.SynMode or self.ProofreadingMode:
                 if self.activeRenderer._Orientation=="arbitrary":
                     return
                 if (not self.ariadne.job):
@@ -4485,7 +4536,7 @@ class QRenWin(QtGui.QWidget):
                 currTask=self.ariadne.job.get_current_task()
                 if currTask==None:
                     return
-                if currTask._tasktype=="synapse_detection":
+                if currTask._tasktype=="synapse_detection" or currTask._tasktype=="proofreading":
                     currTask.MoveAlongPath(-1*self.ariadne.SpinBoxSpeed.value()*CubeLoader.Magnification[0])
             else:
                 if self.activeRenderer._Orientation=="orthogonal":
@@ -4510,7 +4561,7 @@ class QRenWin(QtGui.QWidget):
 #                currTask=self.ariadne.job.get_current_task()
 #                if not (not currTask):
 #                    if currTask._tasktype=="synapse_detection":
-                self.ariadne.synapse_browser.search_synapse("forward")
+            self.ariadne.synapse_browser.search_synapse("forward")
         elif key == QtCore.Qt.Key_Left:
 #            if self.SynMode:
 #                currTask=self.ariadne.job.get_current_task()
@@ -4587,7 +4638,7 @@ class QRenWin(QtGui.QWidget):
         elif key == QtCore.Qt.Key_Delete:
             self.DeleteActiveObj()
         elif key in comment_shortcut_keys and self.ariadne._comboBox_Shortcuts.isEnabled():
-            if not (self.SynMode or (self.TracingMode>0) or self.TagMode):
+            if not (self.ProofreadingMode or self.SynMode or (self.TracingMode>0) or self.TagMode):
                 return
             index=comment_shortcut_keys.index(key)
             self.ariadne._comboBox_Shortcuts.setCurrentIndex(index)
@@ -5917,7 +5968,7 @@ class DemandDrivenFile(config):
         if ddconfigfile.__len__()==1:
             ddconfigfile=ddconfigfile[0]
             ddconfigfileobj = cStringIO.StringIO(self.archive.read(ddconfigfile))
-            config.__init__(self,ddconfigfileobj, encoding='UTF8');
+            config.__init__(self,ddconfigfileobj);
         else:
             print "Error: invalid demand-driven config file: ", ddconfigfile
             return
@@ -9623,6 +9674,7 @@ class ARIADNE(QtGui.QMainWindow):
         QtCore.QObject.connect(self.radioBtn_Tracing,QtCore.SIGNAL("toggled(bool)"),self.ChangeWorkingMode)
         QtCore.QObject.connect(self.radioBtn_Tagging,QtCore.SIGNAL("toggled(bool)"),self.ChangeWorkingMode)
         QtCore.QObject.connect(self.radioBtn_Synapses,QtCore.SIGNAL("toggled(bool)"),self.ChangeWorkingMode)
+        QtCore.QObject.connect(self.radioBtn_Proofreading,QtCore.SIGNAL("toggled(bool)"),self.ChangeWorkingMode)
 
         QtCore.QObject.connect(self.SpinBoxVOISize,QtCore.SIGNAL("editingFinished()"),self.JumpToPoint)        
         QtCore.QObject.connect(self.ckbx_restrictVOI,QtCore.SIGNAL("stateChanged(int)"),self.RestrictVOI)        
@@ -9670,6 +9722,8 @@ class ARIADNE(QtGui.QMainWindow):
         
         self.span_brightness.lowerPositionChanged.connect(lambda  lower, upper=None: self.ChangeBrightness(lower,upper))
         self.span_brightness.upperPositionChanged.connect(lambda  upper, lower=None: self.ChangeBrightness(lower,upper))
+        
+        QtCore.QObject.connect(self.SpinBoxDepthCutoff,QtCore.SIGNAL("editingFinished()"),self.ChangeDepthCutoff)    
 
         QtCore.QObject.connect(self.SpinBoxX,QtCore.SIGNAL("editingFinished()"),self.JumpToPoint)        
         QtCore.QObject.connect(self.SpinBoxY,QtCore.SIGNAL("editingFinished()"),self.JumpToPoint)        
@@ -10427,7 +10481,7 @@ class ARIADNE(QtGui.QMainWindow):
     def ChangeComment(self,objinfo=None,key=None,value=None):
         if not objinfo:
             return
-        if not (self.QRWin.SynMode or (self.QRWin.TracingMode>0) or self.QRWin.TagMode):
+        if not (self.QRWin.ProofreadingMode or self.QRWin.SynMode or (self.QRWin.TracingMode>0) or self.QRWin.TagMode):
             return
 
         if objinfo=="SelObj":
@@ -10841,10 +10895,12 @@ class ARIADNE(QtGui.QMainWindow):
         self.radioBtn_Tracing.setEnabled(1)
         self.radioBtn_Tagging.setEnabled(1)
         self.radioBtn_Synapses.setEnabled(1)
+        self.radioBtn_Proofreading.setEnabled(1)
 
     def ChangeWorkingMode(self,state):
         if self.radioBtn_Browsing.isChecked():
             self.QRWin.TracingMode=0
+            self.QRWin.ProofreadingMode=0
             self.QRWin.SynMode=0
             self.QRWin.TagMode=0
             self._comboBox_Shortcuts.setEnabled(0)
@@ -10853,12 +10909,12 @@ class ARIADNE(QtGui.QMainWindow):
             self._text_Comment_3.setEnabled(0)
             self._text_Comment_4.setEnabled(0)
 
-
         elif self.radioBtn_Tracing.isChecked():
             if self.radioBtn_singlenodes.isChecked():
                 self.QRWin.TracingMode=2
             else:
                 self.QRWin.TracingMode=1
+            self.QRWin.ProofreadingMode=0
             self.QRWin.SynMode=0
             self.QRWin.TagMode=0
             self._comboBox_Shortcuts.setEnabled(1)
@@ -10867,9 +10923,20 @@ class ARIADNE(QtGui.QMainWindow):
             self._text_Comment_2.setEnabled(1)
             self._text_Comment_3.setEnabled(1)
             self._text_Comment_4.setEnabled(1)
+        elif self.radioBtn_Proofreading.isChecked():
+            self.QRWin.TracingMode=0
+            self.QRWin.ProofreadingMode=1
+            self.QRWin.SynMode=0
+            self.QRWin.TagMode=0
+            self._comboBox_Shortcuts.setEnabled(1)
 
+            self._text_Comment.setEnabled(1)
+            self._text_Comment_2.setEnabled(1)
+            self._text_Comment_3.setEnabled(1)
+            self._text_Comment_4.setEnabled(1)
         elif self.radioBtn_Synapses.isChecked():
             self.QRWin.TracingMode=0
+            self.QRWin.ProofreadingMode=0
             self.QRWin.SynMode=1
             self.QRWin.TagMode=0
             self.Job.setVisible(1)
@@ -10881,6 +10948,7 @@ class ARIADNE(QtGui.QMainWindow):
             self._text_Comment_4.setEnabled(1)
         elif self.radioBtn_Tagging.isChecked():
             self.QRWin.TracingMode=0
+            self.QRWin.ProofreadingMode=0
             self.QRWin.SynMode=0
             self.QRWin.TagMode=1
             self._comboBox_Shortcuts.setEnabled(1)
@@ -10890,6 +10958,17 @@ class ARIADNE(QtGui.QMainWindow):
             self._text_Comment_4.setEnabled(1)
                
         self.UpdateWindowTitle()
+        
+    def ChangeDepthCutoff(self,value=None):
+        if not value:
+            value=self.SpinBoxDepthCutoff.value()
+                    
+        for key,iviewport in self.QRWin.viewports.iteritems():
+            if key=="skeleton_viewport":
+                continue;
+            iviewport._ClippingRange=value
+        
+        self.SynchronizedZoom(1.0)        
 
     def ChangeBrightness(self,lower=None,upper=None):
         for key, plane in self.planeROIs.iteritems():
@@ -12125,6 +12204,8 @@ class ARIADNE(QtGui.QMainWindow):
     def UpdateWindowTitle(self):
         if self.QRWin.SynMode:
             WorkingMode="Synapse Annotation"
+        elif self.QRWin.ProofreadingMode:
+            WorkingMode="Proofreading"
         elif self.QRWin.TagMode:
             WorkingMode="Tagging"
         elif self.QRWin.TracingMode:
@@ -12613,6 +12694,7 @@ class ARIADNE(QtGui.QMainWindow):
         filelist = []
         txtfilelist=[]
         jobfiles= []
+        meshfiles=[]
         for root, dirnames, filenames in os.walk(tempdir):
           for filename in fnmatch.filter(filenames, '*.nml'):
               filelist.append(os.path.join(root, filename))
@@ -12622,6 +12704,8 @@ class ARIADNE(QtGui.QMainWindow):
               txtfilelist.append(os.path.join(root, filename))
           for filename in fnmatch.filter(filenames, '*.job'):
               jobfiles.append(os.path.join(root, filename))
+          for filename in fnmatch.filter(filenames, '*.ply'):
+              meshfiles.append(os.path.join(root, filename))
         
         if convertflag:
             if not filelist.__len__()==1:
@@ -12638,6 +12722,10 @@ class ARIADNE(QtGui.QMainWindow):
         SelObj=[None,None,None]   
         editPosition=[None,None,None]
         dataset=None
+        for filename in meshfiles:
+            tempNeurons,SelObj,editPosition=self.LoadMeshFile(filename)
+            Neurons.update(tempNeurons)
+            
         if filelist.__len__()>0:
             tempNeurons, SelObj, editPosition, dataset=self.LoadNMLFile(filelist,parseflags=1)
             Neurons.update(tempNeurons)
@@ -12648,6 +12736,9 @@ class ARIADNE(QtGui.QMainWindow):
                 except:
                     print 'Could not remove file: ', filename
         for filename in txtfilelist:
+            basename=ntpath.basename(filename)
+            if basename=='mergelist.txt' and origfilename.endswith('.k.zip'):
+                continue
             tempNeurons,SelObj,tempfilename,editPosition,dataset=self.LoadFileList(filename)
             Neurons.update(tempNeurons)
         for filename in txtfilelist:
@@ -12681,6 +12772,7 @@ class ARIADNE(QtGui.QMainWindow):
 
             if not (not (self.job._Dataset)):                
                 dataset=self.job._Dataset
+
         for neuronId, neuron_obj in Neurons.iteritems():
             neuron_obj.filename=origfilename
             
@@ -15410,6 +15502,7 @@ if __name__ == "__main__":
     window1.SetSomaVisibility()
     window1.SetRegionVisibility()
     window1.RestrictVOI()
+    window1.ChangeDepthCutoff()
 
     window1.btn_loadReferenceFile.setEnabled(False)
 

@@ -1,5 +1,3 @@
-/*gcc extractROIlib.c -O3 -Wall -fPIC -shared -o clibraries/extractROIlib.so*/
-/*i586-mingw32msvc-gcc extractROIlib.c -O3 -Wall -shared -o clibraries/extractROIlib.dll*/
 #include <math.h>
 #include <stdio.h>
 #include <string.h>

@@ -1,8 +1,3 @@
-/*gcc -I/usr/include/libpng12 loaderlib.c readpng.c streamcube.h -lcurl -O3 -fPIC -shared -o clibraries/loaderlib.so*/
-
-//FMI: /*i586-mingw32msvc-gcc -I/usr/local/i586-mingw32msvc/include -L/usr/local/i586-mingw32msvc/lib loaderlib.c readpng.c -O3 -shared -o clibraries/loaderlib.dll -lcurl -lpng -lz*/
-//i586-mingw32msvc-gcc -O3 -shared -o clibraries/loaderlib.dll -DCURL_STATICLIB loaderlib.c readpng.c streamcube.h -lpthreadGC2 -lpng -lz -ljpeg -lcurl -lwldap32 -lz -lws2_32 -lwsock32
-
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
