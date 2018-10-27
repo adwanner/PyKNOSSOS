@@ -3264,9 +3264,12 @@ class QRenWin(QtGui.QWidget):
                 self.ariadne.btn_DelNode_3.setEnabled(1)
             
             if (nodeId==None) or (nodeId<0):
-                nodeId=obj.pointIdx2nodeId(0) #if no node is selected, try to select the first node
-                if nodeId<0:
-                    return
+                if ObjType=="mesh":
+                    nodeId=0
+                else:
+                    nodeId=obj.pointIdx2nodeId(0) #if no node is selected, try to select the first node
+                    if nodeId<0:
+                        return
                     
             if ObjType=="region" or ObjType=="soma":
                 self.unselect()
@@ -3361,7 +3364,8 @@ class QRenWin(QtGui.QWidget):
                 if not (not FaceCenterPoints):
                     Point=np.mean(vtk_to_numpy(FaceCenterPoints),0)
         elif ObjType=="mesh":
-            pointIdx=obj.nodeId2pointIdx(nodeId)
+            pointIdx=nodeId
+#            pointIdx=obj.nodeId2pointIdx(nodeId)
             if  pointIdx>-1:
                 Point=obj.data.GetPoint(pointIdx)
         elif ObjType=="skeleton":
@@ -3834,8 +3838,8 @@ class QRenWin(QtGui.QWidget):
             elif ObjType in ["mesh"]: #clicked on soma
                 obj=self.ariadne.Neurons[NeuronID].children[ObjType]
  #               nodeId=obj.pointIdx2nodeId(0)
-                Point,nodeId=obj.get_closest_point(PickedPoint)
-                self.SetActiveObj(ObjType,NeuronID,nodeId)
+                Point,pointIdx=obj.get_closest_point(PickedPoint)
+                self.SetActiveObj(ObjType,NeuronID,pointIdx)
                 print "neuronID: {0}, Location: {1} ".format(NeuronID,Point)
 #                print "soma of neuron:{0}".format(NeuronID)
                 return            
@@ -6423,6 +6427,23 @@ class mesh(soma):
     LUT=vtk.vtkLookupTable()
     instancecount=[0]
     
+    def get_closest_point(self,point):
+        if not self.PointLocator.GetDataSet():
+            self.visibleData.Update()
+            DataSet=self.visibleData.GetOutput()
+            if DataSet.GetNumberOfPoints()>0:
+                self.PointLocator.SetDataSet(DataSet)
+                self.PointLocator.BuildLocator()
+            else:
+                return -1,-1
+        DataSet=self.PointLocator.GetDataSet()
+        DataSet.Update()
+        pointIdx=self.PointLocator.FindClosestPoint(point)
+        if pointIdx==-1 or pointIdx==None:
+            return -1,-1
+
+        return np.array(DataSet.GetPoint(pointIdx),dtype=np.float), pointIdx
+    
     def set_nodes(self,tempMesh,NodeID=None):
         self.data.DeepCopy(tempMesh)     
         self.data.Modified()
@@ -6468,27 +6489,27 @@ class mesh(soma):
         NeuronID.SetValue(0,self.NeuronID)    
         NeuronID.Modified()
         
-        NodeIDArray=self.data.GetPointData().GetArray("NodeID") 
-        if not NodeIDArray:
-            NodeIDArray = vtk.vtkIdTypeArray()
-            NodeIDArray.SetName("NodeID")
-            self.data.GetPointData().AddArray(NodeIDArray)
-            
-        if NodeID==None:
-            NodeID=np.array(range(NNodes),dtype=np.int)      
-        
-        if not (NodeID.__class__.__name__=='vtkIdTypeArray' or NodeID.__class__.__name__=='vtkIntArray' or NodeID.__class__.__name__=='vtkLongArray' or NodeID.__class__.__name__=='vtkLongLongArray'): 
-            if not NodeID.__class__.__name__=='ndarray':
-                NodeID=np.array([NodeID],dtype=np.int)
-            
-            NodeID=numpy_to_vtk(NodeID, deep=1, array_type=vtk.VTK_ID_TYPE)
-        else:
-            if NodeID.GetNumberOfTuples()>0:
-                NodeID=numpy_to_vtk(vtk_to_numpy(NodeID), deep=1, array_type=vtk.VTK_ID_TYPE)
-            else:
-                1
-        NodeIDArray.DeepCopy(NodeID)
-        NodeIDArray.Modified()
+#        NodeIDArray=self.data.GetPointData().GetArray("NodeID") 
+#        if not NodeIDArray:
+#            NodeIDArray = vtk.vtkIdTypeArray()
+#            NodeIDArray.SetName("NodeID")
+#            self.data.GetPointData().AddArray(NodeIDArray)
+#            
+#        if NodeID==None:
+#            NodeID=np.array(range(NNodes),dtype=np.int)      
+#        
+#        if not (NodeID.__class__.__name__=='vtkIdTypeArray' or NodeID.__class__.__name__=='vtkIntArray' or NodeID.__class__.__name__=='vtkLongArray' or NodeID.__class__.__name__=='vtkLongLongArray'): 
+#            if not NodeID.__class__.__name__=='ndarray':
+#                NodeID=np.array([NodeID],dtype=np.int)
+#            
+#            NodeID=numpy_to_vtk(NodeID, deep=1, array_type=vtk.VTK_ID_TYPE)
+#        else:
+#            if NodeID.GetNumberOfTuples()>0:
+#                NodeID=numpy_to_vtk(vtk_to_numpy(NodeID), deep=1, array_type=vtk.VTK_ID_TYPE)
+#            else:
+#                1
+#        NodeIDArray.DeepCopy(NodeID)
+#        NodeIDArray.Modified()
               
 
         center=self.data.GetCenter()
@@ -6520,9 +6541,9 @@ class mesh(soma):
 #        NeuronID.SetNumberOfComponents(1)
 #        self.data.GetPointData().AddArray(NeuronID)
 
-        NodeID = vtk.vtkIdTypeArray()
-        NodeID.SetName("NodeID")
-        self.data.GetPointData().AddArray(NodeID)
+#        NodeID = vtk.vtkIdTypeArray()
+#        NodeID.SetName("NodeID")
+#        self.data.GetPointData().AddArray(NodeID)
         
         smoothingIterations = 10;
         featureAngle = 60.0;
