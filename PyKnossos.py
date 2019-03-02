@@ -36,7 +36,7 @@ experimental=1 #show experimental features (false if usermode==1)
 encryptionkey='EncryptPyKnossos';
 #AES key must be either 16, 24, or 32 bytes long
 
-PyKNOSSOS_VERSION='PyKNOSSOS180821'
+PyKNOSSOS_VERSION='PyKNOSSOS190301'
 
 if usermode==1:
     experimental=0
@@ -2148,7 +2148,7 @@ class synapse_detection(task):
                 if length<1.0e-5:
                     continue                
                 #now the starting normal should simply be the cross product
-                #in the follvtk.vtkStripper()owing if statement we check for the case where
+                #in the following if statement we check for the case where
                 #the two segments are parallel 
                 normal=np.cross(tNext,ftmp)
                 length=vtk.vtkMath.Normalize(normal)
@@ -2361,7 +2361,7 @@ class planeROI():
         #this is probably not necessary anymore, because we set the global "ResolveCoincidentTopology" parameters for the mappers at the beginning.
         if self._Orientation=="orthogonal":    
             1
-#            self.PlaneActor.GetProperty().SetOpacity(0.9999)
+#        self.PlaneActor.GetProperty().SetOpacity(0.9999)
         self.PlaneActor.SetMapper(self.TextureMapper);
         self.PlaneActor.SetTexture(self.Texture);
                 
@@ -5205,8 +5205,7 @@ class objs():
         tempData.GetPointData().SetActivePedigreeIds(None)
         tempData.GetPointData().RemoveArray("PointColor")
         tempData.GetPointData().RemoveArray("NeuronID")
-        tempData.GetPointData().RemoveArray("DeletedNodes")
-        tempData.GetPointData().RemoveArray("VisibleNodes")
+        tempData.GetPointData().RemoveArray("NodeState")
         tempData.GetPointData().RemoveArray("Radius")
         tempData.GetPointData().RemoveArray("vtkOriginalPointIds")
         tempData.GetCellData().RemoveArray("vtkOriginalCellIds")
@@ -5729,19 +5728,20 @@ class objs():
                     return
                 if self.data.GetPointData()==None:
                     return
-                VisibleNodes=self.data.GetPointData().GetArray("VisibleNodes")
-                if VisibleNodes==None:
+                NodeState=self.data.GetPointData().GetArray("NodeState")
+                if NodeState==None:
                     return
                 NNodes=self.data.GetNumberOfPoints()
                 if NNodes==0:
                     return
+                npNodeState=np.uint8(vtk_to_numpy(NodeState)>0);
                 if vis:
-                    visibleNodes=np.ones([NNodes,1],dtype=np.uint)
+                    npNodeState=2*npNodeState;
                 else:
-                    visibleNodes=np.zeros([NNodes,1],dtype=np.uint)
+                    npNodeState=1*npNodeState;
                 
-                VisibleNodes.DeepCopy(numpy_to_vtk(visibleNodes,deep=1, array_type=vtk.VTK_UNSIGNED_INT))
-                VisibleNodes.Modified()
+                NodeState.DeepCopy(numpy_to_vtk(npNodeState,deep=1, array_type=vtk.VTK_UNSIGNED_INT))
+                NodeState.Modified()
 
     def set_pickable(self,pickable):
         for key, child in self.children.iteritems():            
@@ -5888,7 +5888,7 @@ class objs():
         itemstr="{0}".format(self.objtype);
         
         if not self.NeuronID==None:
-            itemstr+= " {0}".format(self.NeuronID)
+            itemstr+= " %08.3f" % (self.NeuronID)
             
         if not (not comment):
             itemstr+= ": {0}".format(comment)
@@ -6153,6 +6153,73 @@ class soma(objs):
                     Labels.Modified()
         self.label.Modified()
 
+    def delete_node(self,nodeIds):   
+        if 'l' in self.flags: #locked object
+            return
+        self.new_singleactive(self)
+        if nodeIds==None:
+            return None
+        if nodeIds.__class__.__name__.startswith('vtk'):
+            nodeIds=vtk_to_numpy(nodeIds)
+            nodeIds=nodeIds.tolist()
+        if not nodeIds.__class__.__name__=='set':
+            if not nodeIds.__class__.__name__=='list':
+                nodeIds=[nodeIds]
+            nodeIds=set(nodeIds)
+        allCells=vtk.vtkIdList()
+        allPointIdxs=list()
+
+        self.data.BuildCells() 
+        self.data.BuildLinks()        
+                
+        self.unselect()
+        for nodeId in nodeIds:
+            self.comments.delete(nodeId)
+        
+            pointIdx=self.nodeId2pointIdx(nodeId)
+            if pointIdx<0:
+                continue;
+            allPointIdxs.append(pointIdx)
+
+            if self.data.GetNumberOfCells()==0:
+                continue
+            CellList=vtk.vtkIdList()
+            self.data.GetPointCells(pointIdx,CellList)
+            NCells=CellList.GetNumberOfIds()
+            for icell in range(NCells):
+                allCells.InsertUniqueId(CellList.GetId(icell))
+
+        NodeState=self.data.GetPointData().GetArray("NodeState")
+
+        for pointIdx in allPointIdxs:
+            NodeState.SetValue(pointIdx,0);
+
+        for icell in range(NCells):
+            cellIdx=allCells.GetId(icell)
+
+            #Mark the cell as deleted.
+            self.data.DeleteCell(cellIdx);
+
+        #Remove the marked cells.
+        self.data.RemoveDeletedCells();
+        self.data.BuildCells() 	
+
+        NodeState.Modified()
+#
+        self.data.BuildLinks()
+        self.data.Modified()
+        self.update_label()
+        
+        NodeFound=False;
+        for ipoint in range(NodeState.GetNumberOfTuples()):
+            if NodeState.GetValue(ipoint)>0:
+                NodeFound=True
+                break;
+                
+        if not NodeFound:
+            self.delete()
+        
+        
     def set_nodes(self,points,NodeID=None):
         self.data.SetPoints(points)        
 
@@ -6175,7 +6242,7 @@ class soma(objs):
         if not (NodeID.__class__.__name__=='vtkIdTypeArray' or NodeID.__class__.__name__=='vtkIntArray' or NodeID.__class__.__name__=='vtkLongArray' or NodeID.__class__.__name__=='vtkLongLongArray'): 
             if not NodeID.__class__.__name__=='ndarray':
                 NodeID=np.array([NodeID],dtype=np.int)
-            
+            NodeID=NodeID.squeeze()
             NodeID=numpy_to_vtk(NodeID, deep=1, array_type=vtk.VTK_ID_TYPE)
         else:
             if NodeID.GetNumberOfTuples()>0:
@@ -6185,13 +6252,9 @@ class soma(objs):
         NodeIDArray.DeepCopy(NodeID)
         NodeIDArray.Modified()
         
-        DeletedNodes=self.data.GetPointData().GetArray("DeletedNodes")
-        DeletedNodes.DeepCopy(numpy_to_vtk(np.zeros([NNodes,1],dtype=np.uint), deep=1, array_type=vtk.VTK_UNSIGNED_INT))
-        DeletedNodes.Modified()
-
-        VisibleNodes=self.data.GetPointData().GetArray("VisibleNodes")
-        VisibleNodes.DeepCopy(numpy_to_vtk(np.ones([NNodes,1],dtype=np.uint), deep=1, array_type=vtk.VTK_UNSIGNED_INT))
-        VisibleNodes.Modified()
+        NodeState=self.data.GetPointData().GetArray("NodeState")
+        NodeState.DeepCopy(numpy_to_vtk(2*np.ones([NNodes,1],dtype=np.uint), deep=1, array_type=vtk.VTK_UNSIGNED_INT))
+        NodeState.Modified()
         
         vertex=np.array([np.ones(NNodes),range(NNodes)],dtype=np.int).reshape(2,NNodes).transpose().reshape(2*NNodes,)
         vertex=numpy_to_vtk(vertex, deep=1, array_type=vtk.VTK_ID_TYPE)
@@ -6299,19 +6362,15 @@ class soma(objs):
         NodeID.SetName("NodeID")
         self.data.GetPointData().AddArray(NodeID)
 
-        DeletedNodes=vtk.vtkUnsignedIntArray()
-        DeletedNodes.SetName("DeletedNodes")
-        self.data.GetPointData().AddArray(DeletedNodes)
-
-        VisibleNodes=vtk.vtkUnsignedIntArray()
-        VisibleNodes.SetName("VisibleNodes")
-        self.data.GetPointData().AddArray(VisibleNodes)
+        NodeState=vtk.vtkUnsignedIntArray()
+        NodeState.SetName("NodeState")
+        self.data.GetPointData().AddArray(NodeState)
 
         selection = vtk.vtkSelectionSource()
         selection.SetContentType(7) # vtkSelection::THRESHOLDS
         selection.SetFieldType(1) # vtkSelection::POINTS
-        selection.SetArrayName("DeletedNodes")
-        selection.AddThreshold(0,0)
+        selection.SetArrayName("NodeState")
+        selection.AddThreshold(1,2)
         selection.Update()
         
         self.validData =vtk.vtkExtractSelection()    
@@ -6337,8 +6396,8 @@ class soma(objs):
         selection = vtk.vtkSelectionSource()
         selection.SetContentType(7) # vtkSelection::THRESHOLDS
         selection.SetFieldType(1) # vtkSelection::POINTS
-        selection.SetArrayName("VisibleNodes")
-        selection.AddThreshold(1,1)
+        selection.SetArrayName("NodeState")
+        selection.AddThreshold(2,2)
         selection.Update()        
         self.visibleData =vtk.vtkExtractSelection()
         self.visibleData.SetInputConnection(0,self.SomaSurface.GetOutputPort());
@@ -6993,12 +7052,10 @@ class skeleton(objs):
             for icell in range(NCells):
                 allCells.InsertUniqueId(CellList.GetId(icell))
 
-        DeletedNodes=self.data.GetPointData().GetArray("DeletedNodes")
-#        VisibleNodes=self.data.GetPointData().GetArray("VisibleNodes")
+        NodeState=self.data.GetPointData().GetArray("NodeState")
 
         for pointIdx in allPointIdxs:
-            DeletedNodes.SetValue(pointIdx,1);
-#            VisibleNodes.SetValue(pointIdx,0);
+            NodeState.SetValue(pointIdx,0);
 
         NCells=allCells.GetNumberOfIds()                
         Branches2Add=list()
@@ -7033,8 +7090,7 @@ class skeleton(objs):
         self.data.RemoveDeletedCells();
         self.data.BuildCells() 	
 
-        DeletedNodes.Modified()
-#        VisibleNodes.Modified()
+        NodeState.Modified()
 
         self.data.BuildLinks()
         self.data.Modified()
@@ -7128,13 +7184,9 @@ class skeleton(objs):
         NodeID.SetName("NodeID")
         self.data.GetPointData().AddArray(NodeID)
         
-        DeletedNodes=vtk.vtkUnsignedIntArray()
-        DeletedNodes.SetName("DeletedNodes")
-        self.data.GetPointData().AddArray(DeletedNodes)
-
-        VisibleNodes=vtk.vtkUnsignedIntArray()
-        VisibleNodes.SetName("VisibleNodes")
-        self.data.GetPointData().AddArray(VisibleNodes)
+        NodeState=vtk.vtkUnsignedIntArray()
+        NodeState.SetName("NodeState")
+        self.data.GetPointData().AddArray(NodeState)
 
         Radius=vtk.vtkFloatArray()
         Radius.SetName("Radius")
@@ -7147,8 +7199,8 @@ class skeleton(objs):
         selection = vtk.vtkSelectionSource()
         selection.SetContentType(7) # vtkSelection::THRESHOLDS
         selection.SetFieldType(1) # vtkSelection::POINTS
-        selection.SetArrayName("DeletedNodes")
-        selection.AddThreshold(0,0)
+        selection.SetArrayName("NodeState")
+        selection.AddThreshold(1,2)
         selection.Update()
         
         self.validData =vtk.vtkExtractSelection()    
@@ -7158,23 +7210,26 @@ class skeleton(objs):
         selection = vtk.vtkSelectionSource()
         selection.SetContentType(7) # vtkSelection::THRESHOLDS
         selection.SetFieldType(1) # vtkSelection::POINTS
-        selection.SetArrayName("VisibleNodes")
-        selection.AddThreshold(1,1)
+        selection.SetArrayName("NodeState")
+        selection.AddThreshold(2,2)
         selection.Update()        
+
+        self.PolyData2UnstructuredGrid=vtk.vtkDataSetSurfaceFilter()
+        self.PolyData2UnstructuredGrid.SetInputConnection(self.validData.GetOutputPort());
+        self.PolyLines2Edges=vtk.vtkTriangleFilter()
+        self.PolyLines2Edges.SetInputConnection(self.PolyData2UnstructuredGrid.GetOutputPort());
+
         self.visibleData =vtk.vtkExtractSelection()
-        self.visibleData.SetInputConnection(0,self.validData.GetOutputPort());
+        self.visibleData.SetInputConnection(0,self.PolyLines2Edges.GetOutputPort());
         self.visibleData.SetInputConnection(1,selection.GetOutputPort());
 
-        PolyData2UnstructuredGrid=vtk.vtkGeometryFilter()
-        PolyData2UnstructuredGrid.SetInputConnection(self.visibleData.GetOutputPort());
-        PolyLines2Edges=vtk.vtkTriangleFilter()
-        PolyLines2Edges.SetInputConnection(PolyData2UnstructuredGrid.GetOutputPort());
-        self.allDataInput=PolyLines2Edges
+        self.allDataInput=self.visibleData
 
-        PolyData2UnstructuredGrid.ReleaseDataFlagOn()
+        
+        self.PolyData2UnstructuredGrid.ReleaseDataFlagOn()
+        self.PolyLines2Edges.ReleaseDataFlagOn()
         self.visibleData.ReleaseDataFlagOn()
         self.validData.ReleaseDataFlagOn()
-        self.allDataInput.ReleaseDataFlagOn()
         
         self.allData.AddInputConnection(0,self.allDataInput.GetOutputPort())
         self.allData.Modified()
@@ -7595,24 +7650,21 @@ class skeleton(objs):
         NodeIDArray.DeepCopy(NodeID)
         NodeIDArray.Modified()
         
-        DeletedNodes=self.data.GetPointData().GetArray("DeletedNodes")
-        DeletedNodes.DeepCopy(numpy_to_vtk(np.zeros([NNodes,1],dtype=np.uint), deep=1, array_type=vtk.VTK_UNSIGNED_INT))
-        DeletedNodes.Modified()
-
-        VisibleNodes=self.data.GetPointData().GetArray("VisibleNodes")
-        VisibleNodes.DeepCopy(numpy_to_vtk(np.ones([NNodes,1],dtype=np.uint), deep=1, array_type=vtk.VTK_UNSIGNED_INT))
-        VisibleNodes.Modified()
+        NodeState=self.data.GetPointData().GetArray("NodeState")
+        NodeState.DeepCopy(numpy_to_vtk(2*np.ones([NNodes,1],dtype=np.uint), deep=1, array_type=vtk.VTK_UNSIGNED_INT))
+        NodeState.Modified()
         
         vertex=np.array([np.ones(NNodes),range(NNodes)],dtype=np.int).reshape(2,NNodes).transpose().reshape(2*NNodes,)
         vertex=numpy_to_vtk(vertex, deep=1, array_type=vtk.VTK_ID_TYPE)
         Vertices=vtk.vtkCellArray()
         Vertices.SetCells(NNodes,vertex)
         self.data.SetVerts(Vertices)
-        
+        self.data.Modified()
         self.data.BuildCells()
         self.data.Update()
         self.data.BuildLinks()
         self.data.Modified()
+        self.data.Update()
                 
         if NodeID.GetNumberOfTuples()==0:
             return -1,-1
@@ -7644,8 +7696,8 @@ class skeleton(objs):
         NeuronID=self.data.GetPointData().GetArray("NeuronID")
         PointColor=self.data.GetPointData().GetArray("PointColor")
         Radius=self.data.GetPointData().GetArray("Radius")
-        DeletedNodes=self.data.GetPointData().GetArray("DeletedNodes")
-        VisibleNodes=self.data.GetPointData().GetArray("VisibleNodes")
+        
+        NodeState=self.data.GetPointData().GetArray("NodeState")
         NodeID=self.data.GetPointData().GetArray("NodeID")
         if NodeID.GetNumberOfTuples()>0:
             nodeId=np.int(NodeID.GetMaxNorm())
@@ -7659,8 +7711,7 @@ class skeleton(objs):
             NeuronID.InsertNextValue(np.float32(self.NeuronID))
             PointColor.InsertNextValue(self.colorIdx)
             Radius.InsertNextValue(self.DefaultRadius[0])
-            DeletedNodes.InsertNextValue(0)
-            VisibleNodes.InsertNextValue(1)
+            NodeState.InsertNextValue(2)
             nodeId+=1
             NodeID.InsertNextValue(nodeId)
 
@@ -7675,7 +7726,8 @@ class skeleton(objs):
         self.data.BuildCells()
         self.data.Update()
         self.data.BuildLinks()
-        self.data.Modified()    
+        self.data.Modified()  
+        
         if NPoints2Add>1:
             return insertedNodeIds,insertedPointIdx
         else:
@@ -8068,13 +8120,9 @@ class synapse(objs):
         NodeID.SetName("NodeID")
         self.data.GetPointData().AddArray(NodeID)
  
-        DeletedNodes=vtk.vtkUnsignedIntArray()
-        DeletedNodes.SetName("DeletedNodes")
-        self.data.GetPointData().AddArray(DeletedNodes)
-
-        VisibleNodes=vtk.vtkUnsignedIntArray()
-        VisibleNodes.SetName("VisibleNodes")
-        self.data.GetPointData().AddArray(VisibleNodes)
+        NodeState=vtk.vtkUnsignedIntArray()
+        NodeState.SetName("NodeState")
+        self.data.GetPointData().AddArray(NodeState)
 
         Radius=vtk.vtkFloatArray()
         Radius.SetName("Radius")
@@ -8088,8 +8136,8 @@ class synapse(objs):
         selection = vtk.vtkSelectionSource()
         selection.SetContentType(7) # vtkSelection::THRESHOLDS
         selection.SetFieldType(1) # vtkSelection::POINTS
-        selection.SetArrayName("DeletedNodes")
-        selection.AddThreshold(0,0)
+        selection.SetArrayName("NodeState")
+        selection.AddThreshold(1,2)
         selection.Update()
         
         self.validData =vtk.vtkExtractSelection()    
@@ -8099,8 +8147,8 @@ class synapse(objs):
         selection = vtk.vtkSelectionSource()
         selection.SetContentType(7) # vtkSelection::THRESHOLDS
         selection.SetFieldType(1) # vtkSelection::POINTS
-        selection.SetArrayName("VisibleNodes")
-        selection.AddThreshold(1,1)
+        selection.SetArrayName("NodeState")
+        selection.AddThreshold(2,2)
         selection.Update()        
         self.visibleData =vtk.vtkExtractSelection()
         self.visibleData.SetInputConnection(0,self.validData.GetOutputPort());
@@ -8197,13 +8245,9 @@ class synapse(objs):
         NodeIDArray.DeepCopy(NodeID)
         NodeIDArray.Modified()
         
-        DeletedNodes=self.data.GetPointData().GetArray("DeletedNodes")
-        DeletedNodes.DeepCopy(numpy_to_vtk(np.zeros([NPoints,1],dtype=np.uint), deep=1, array_type=vtk.VTK_UNSIGNED_INT))
-        DeletedNodes.Modified()
-
-        VisibleNodes=self.data.GetPointData().GetArray("VisibleNodes")
-        VisibleNodes.DeepCopy(numpy_to_vtk(np.ones([NPoints,1],dtype=np.uint), deep=1, array_type=vtk.VTK_UNSIGNED_INT))
-        VisibleNodes.Modified()
+        NodeState=self.data.GetPointData().GetArray("NodeState")
+        NodeState.DeepCopy(numpy_to_vtk(2*np.ones([NPoints,1],dtype=np.uint), deep=1, array_type=vtk.VTK_UNSIGNED_INT))
+        NodeState.Modified()
         
         
         vertex=np.array([np.ones(NPoints),range(NPoints)],dtype=np.int).reshape(2,NPoints).transpose().reshape(2*NPoints,)
@@ -8277,14 +8321,12 @@ class synapse(objs):
         PointColor=self.data.GetPointData().GetArray("PointColor")
         Radius=self.data.GetPointData().GetArray("Radius")
         NeuronID=self.data.GetPointData().GetArray("NeuronID")
-        DeletedNodes=self.data.GetPointData().GetArray("DeletedNodes")
-        VisibleNodes=self.data.GetPointData().GetArray("VisibleNodes")
+        NodeState=self.data.GetPointData().GetArray("NodeState")
         for ii in range(3):
             PointColor.InsertNextValue(self.colorIdx)
             Radius.InsertNextValue(self.DefaultRadius[0])
             NeuronID.InsertNextValue(np.float32(self.NeuronID))
-            DeletedNodes.InsertNextValue(0)
-            VisibleNodes.InsertNextValue(1)
+            NodeState.InsertNextValue(2)
        
         tempBranch=vtk.vtkIdList()
         tempBranch.InsertNextId(Point0Idx)
@@ -8335,38 +8377,48 @@ class synapse(objs):
         self.data.Modified()    
         return nodeId
 
-    def delete_tag(self,tagIdx):
+    def delete_tag(self,tagList):
         if 'l' in self.flags: #locked object
             return
-        self.unselect_tag(tagIdx)
-        
-        for nodeId in self.tagIdx2nodeId(tagIdx):
-            self.comments.delete(nodeId)
-
-        PointIds=self.data.GetCell(tagIdx).GetPointIds()
-        DeletedNodes=self.data.GetPointData().GetArray("DeletedNodes")
-#        VisibleNodes=self.data.GetPointData().GetArray("VisibleNodes")
-
-        tagCells=set([tagIdx])
-        for ipoint in range(PointIds.GetNumberOfIds()):
-            tempPtId=PointIds.GetId(ipoint)
-            DeletedNodes.SetValue(tempPtId,1);
-#            VisibleNodes.SetValue(tempPtId,0);
-            #we have to consider all the vertex cells for deletion
-            tempCells=vtk.vtkIdList()
-            self.data.GetPointCells(tempPtId,tempCells)
-            for icell in range(tempCells.GetNumberOfIds()):
-                tagCells.add(tempCells.GetId(icell))
+        if not (tagList.__class__.__name__=='list'): 
+            tagList=[tagList]
             
-        DeletedNodes.Modified()
-#        VisibleNodes.Modified()
+        rows2delete = []    
+        if not self.item.__class__()==[]:
+            for irow in range(self.item.rowCount()):
+                tempItem=self.item.child(irow)
+                tagIdx=self.nodeId2tagIdx(tempItem.nodeId)
+                if tagIdx in tagList:
+                    index = tempItem.index()         
+                    rows2delete.append(index.row())
+        
+        NodeState=self.data.GetPointData().GetArray("NodeState")
+        tagCells=set()
+        for tagIdx in tagList:
+            self.unselect_tag(tagIdx)
+            
+            for nodeId in self.tagIdx2nodeId(tagIdx):
+                self.comments.delete(nodeId)
+
+            PointIds=self.data.GetCell(tagIdx).GetPointIds()
+            tagCells.add(tagIdx)
+            for ipoint in range(PointIds.GetNumberOfIds()):
+                tempPtId=PointIds.GetId(ipoint)
+                NodeState.SetValue(tempPtId,0);
+                #we have to consider all the vertex cells for deletion
+                tempCells=vtk.vtkIdList()
+                self.data.GetPointCells(tempPtId,tempCells)
+                for icell in range(tempCells.GetNumberOfIds()):
+                    tagCells.add(tempCells.GetId(icell))
+            
+        NodeState.Modified()
 
         #Mark cells for deletion
         for cellId in tagCells:
             self.data.DeleteCell(cellId);
-            
-        if not self.item.__class__()==[]:
-            self.item.removeRow(tagIdx)
+        rows2delete.sort(reverse=True)
+        for row in rows2delete:                                      
+            self.item.removeRow(row)                
 
         self.data.RemoveDeletedCells();
         self.data.Modified()
@@ -8756,13 +8808,9 @@ class tag(objs):
         NodeID.SetName("NodeID")
         self.data.GetPointData().AddArray(NodeID)
  
-        DeletedNodes=vtk.vtkUnsignedIntArray()
-        DeletedNodes.SetName("DeletedNodes")
-        self.data.GetPointData().AddArray(DeletedNodes)
-
-        VisibleNodes=vtk.vtkUnsignedIntArray()
-        VisibleNodes.SetName("VisibleNodes")
-        self.data.GetPointData().AddArray(VisibleNodes)
+        NodeState=vtk.vtkUnsignedIntArray()
+        NodeState.SetName("NodeState")
+        self.data.GetPointData().AddArray(NodeState)
 
         Radius=vtk.vtkFloatArray()
         Radius.SetName("Radius")
@@ -8776,8 +8824,8 @@ class tag(objs):
         selection = vtk.vtkSelectionSource()
         selection.SetContentType(7) # vtkSelection::THRESHOLDS
         selection.SetFieldType(1) # vtkSelection::POINTS
-        selection.SetArrayName("DeletedNodes")
-        selection.AddThreshold(0,0)
+        selection.SetArrayName("NodeState")
+        selection.AddThreshold(1,2)
         selection.Update()
         
         self.validData =vtk.vtkExtractSelection()    
@@ -8787,8 +8835,8 @@ class tag(objs):
         selection = vtk.vtkSelectionSource()
         selection.SetContentType(7) # vtkSelection::THRESHOLDS
         selection.SetFieldType(1) # vtkSelection::POINTS
-        selection.SetArrayName("VisibleNodes")
-        selection.AddThreshold(1,1)
+        selection.SetArrayName("NodeState")
+        selection.AddThreshold(2,2)
         selection.Update()        
         self.visibleData =vtk.vtkExtractSelection()
         self.visibleData.SetInputConnection(0,self.validData.GetOutputPort());
@@ -8886,15 +8934,10 @@ class tag(objs):
         NodeIDArray.DeepCopy(NodeID)
         NodeIDArray.Modified()
         
-        DeletedNodes=self.data.GetPointData().GetArray("DeletedNodes")
-        DeletedNodes.DeepCopy(numpy_to_vtk(np.zeros([NPoints,1],dtype=np.uint), deep=1, array_type=vtk.VTK_UNSIGNED_INT))
-        DeletedNodes.Modified()
+        NodeState=self.data.GetPointData().GetArray("NodeState")
+        NodeState.DeepCopy(numpy_to_vtk(2*np.ones([NPoints,1],dtype=np.uint), deep=1, array_type=vtk.VTK_UNSIGNED_INT))
+        NodeState.Modified()
 
-        VisibleNodes=self.data.GetPointData().GetArray("VisibleNodes")
-        VisibleNodes.DeepCopy(numpy_to_vtk(np.ones([NPoints,1],dtype=np.uint), deep=1, array_type=vtk.VTK_UNSIGNED_INT))
-        VisibleNodes.Modified()
-        
-        
         vertex=np.array([np.ones(NPoints),range(NPoints)],dtype=np.int).reshape(2,NPoints).transpose().reshape(2*NPoints,)
         vertex=numpy_to_vtk(vertex, deep=1, array_type=vtk.VTK_ID_TYPE)
         Vertices=vtk.vtkCellArray()
@@ -8938,8 +8981,7 @@ class tag(objs):
         PointColor=self.data.GetPointData().GetArray("PointColor")
         Radius=self.data.GetPointData().GetArray("Radius")
         NeuronID=self.data.GetPointData().GetArray("NeuronID")
-        DeletedNodes=self.data.GetPointData().GetArray("DeletedNodes")
-        VisibleNodes=self.data.GetPointData().GetArray("VisibleNodes")
+        NodeState=self.data.GetPointData().GetArray("NodeState")
         
         if classStr=="vtkPoints":
             NPoints=[Points.GetNumberOfPoints()]
@@ -8963,9 +9005,8 @@ class tag(objs):
             PointColor.InsertNextValue(self.colorIdx)
             Radius.InsertNextValue(self.DefaultRadius[0])
             NeuronID.InsertNextValue(np.float32(self.NeuronID))
-            DeletedNodes.InsertNextValue(0)
-            VisibleNodes.InsertNextValue(1)
-
+            NodeState.InsertNextValue(2)
+            
 
             vertex=vtk.vtkIdList()
             vertex.InsertNextId(pointIdx)
@@ -8991,12 +9032,9 @@ class tag(objs):
         self.comments.delete(nodeId)
 
         pointIdx=self.tagIdx2pointIdx(tagIdx)
-        DeletedNodes=self.data.GetPointData().GetArray("DeletedNodes")
-        DeletedNodes.SetValue(pointIdx,1);
-        DeletedNodes.Modified()
-#        VisibleNodes=self.data.GetPointData().GetArray("VisibleNodes")
-#        VisibleNodes.SetValue(pointIdx,0);
-#        VisibleNodes.Modified()
+        NodeState=self.data.GetPointData().GetArray("NodeState")
+        NodeState.SetValue(pointIdx,0);
+        NodeState.Modified()
 
         #Mark the cell as deleted.
         self.data.DeleteCell(tagIdx);
@@ -9331,10 +9369,10 @@ class ARIADNE(QtGui.QMainWindow):
 
         ROISize=361
 
-        InterPolFactor=(CubeLoader._NCubesPerEdge[0]-1)*CubeLoader._CubeSize[0]/np.sqrt(2.0)/361;
+        InterPolFactor=(CubeLoader._NCubesPerEdge[0]-1)*CubeLoader._CubeSize[0]/np.sqrt(2.0)/ROISize;
         CubeLoader.InterPolFactor=min(2.0,max(1.0,InterPolFactor));
         if InterPolFactor>2.0:
-            ROISize=2.0*np.floor(361*InterPolFactor/4.0)+1.0
+            ROISize=2.0*np.floor(ROISize*InterPolFactor/4.0)+1.0
 
         print "ROISize: ", ROISize
 
@@ -9926,15 +9964,20 @@ class ARIADNE(QtGui.QMainWindow):
             NeuronIDs=list()
             for neuronId, neuron_obj in window1.Neurons.iteritems():
                 if not "soma" in neuron_obj.children:
-                    continue
-                if neuron_obj.children["soma"]==[]:
-                    continue
-                Points= neuron_obj.children["soma"].data.GetPoints().GetData()
-                NPoints=Points.GetNumberOfTuples()
-                center=np.array([0,0,0],dtype=np.float)
-                for ipoint in range(NPoints):
-                    center+=Points.GetTuple(ipoint)
-                SomaCenter.append(np.dot(zdir,center)/NPoints)
+                    found=neuron_obj.search_comment(["comment"],[u'1'],None,"forward",True)
+                    if not found:
+                        continue
+                    center= neuron_obj.children[found[0]].data.GetPoint(found[2])
+                    SomaCenter.append(np.dot(zdir,center))
+                else:
+                    if neuron_obj.children["soma"]==[]:
+                        continue
+                    Points= neuron_obj.children["soma"].data.GetPoints().GetData()
+                    NPoints=Points.GetNumberOfTuples()
+                    center=np.array([0,0,0],dtype=np.float)
+                    for ipoint in range(NPoints):
+                        center+=Points.GetTuple(ipoint)
+                    SomaCenter.append(np.dot(zdir,center)/NPoints)
                 NeuronIDs.append(neuronId)
                 
             newColorIndex=sorted(range(SomaCenter.__len__()),key=lambda k: SomaCenter[k]);
@@ -10098,64 +10141,130 @@ class ARIADNE(QtGui.QMainWindow):
         SourceNeuronID=SelObj[1]
         if not (SourceNeuronID in self.Neurons):
             return
-        if not (SelObj[0]=="skeleton"):
-            return
-        if not "skeleton" in self.Neurons[SourceNeuronID].children:
-            return 
-        source=self.Neurons[SourceNeuronID].children["skeleton"]
-        tempData=source.data
-        if tempData==None:
-            return
-        NPoints=tempData.GetNumberOfPoints()
-        if NPoints==0:
-            return
-
-        NeuronID=float(np.round(self._SpinBox_MergeWholeNeuronId.value(),3))
-        if not (NeuronID in self.Neurons):
-            self.NewNeuron(NeuronID)
-
-        if not "skeleton" in self.Neurons[NeuronID].children:
-            color=self.Neurons[NeuronID].LUT.GetTableValue(\
-                self.Neurons[NeuronID].colorIdx)
-            target=skeleton(self.Neurons[NeuronID].item,NeuronID,color)
-            self.Neurons[NeuronID].children["skeleton"]=target
-        else:           
-            target=self.Neurons[NeuronID].children["skeleton"]
-
-        newNodeIds,newPointIdxs=target.add_node(tempData.GetPoints())
-        if newPointIdxs.__class__.__name__=='list':
-            startPointIdx=newPointIdxs[0]
-            startNodeId=newNodeIds[0]
-        else:
-            startPointIdx=newPointIdxs
-            startNodeId=newNodeIds
+        newSelObj=[]
+        newSelObj.append(SelObj[0])
+        newSelObj.append(SelObj[1])
+        newSelObj.append(SelObj[2])
             
-        tempLines=tempData.GetLines()
-        tempLines.InitTraversal()
-        NLines=tempData.GetNumberOfLines()
-        if NLines>0:
-            for icell in range(NLines):      
-                tempCell=vtk.vtkIdList()     
-                tempLines.GetNextCell(tempCell)
-                for iid in range(tempCell.GetNumberOfIds()):
-                    tempCell.SetId(iid,tempCell.GetId(iid)+startPointIdx)
-                
-                if icell==NLines-1:
-                    target.add_branch(tempCell,'vtkIdList',1)  #update of links
-                else:
-                    target.add_branch(tempCell,'vtkIdList',0) #no updating of links
+        newNeuronID=float(np.round(self._SpinBox_MergeWholeNeuronId.value(),3))
+        if  SourceNeuronID==newNeuronID:
+            return
+            
+        if not (newNeuronID in self.Neurons):
+            self.NewNeuron(newNeuronID)
+            
+        children2merge=["skeleton","soma","synapse"]
+        for child in children2merge:
+            if not child in self.Neurons[SourceNeuronID].children:
+                continue            
+            source=self.Neurons[SourceNeuronID].children[child]
+            tempData=source.data
+            if tempData==None:
+                continue
 
-        NodeID=tempData.GetPointData().GetArray("NodeID")
-        nodeIds=list(vtk_to_numpy(NodeID))
+            NPoints=tempData.GetNumberOfPoints()
+            if NPoints==0:
+                continue
+
+            if child in self.Neurons[newNeuronID].children:
+                target=self.Neurons[newNeuronID].children[child]
+            else:
+                color=self.Neurons[newNeuronID].LUT.GetTableValue(\
+                    self.Neurons[newNeuronID].colorIdx)
+                if child=="skeleton":
+                    target=skeleton(self.Neurons[newNeuronID].item,newNeuronID,color)
+                if child=="synapse":
+                    target=synapse(self.Neurons[newNeuronID].item,newNeuronID,color)
+                if child=="soma":
+                    target=soma(self.Neurons[newNeuronID].item,newNeuronID,color)
+                self.Neurons[newNeuronID].children[child]=target
+
+            tempPoints=vtk.vtkPoints()
+            tempPoints.DeepCopy(tempData.GetPoints())
+            
+            tempLines=tempData.GetLines()
+            tempLines.InitTraversal()
+            NLines=tempData.GetNumberOfLines()
+            
+            NodeID=vtk.vtkIdTypeArray()
+            NodeID.DeepCopy(tempData.GetPointData().GetArray("NodeID"))
+            nodeIds=list(vtk_to_numpy(NodeID))
+            
+            if child=="skeleton":
+                newNodeIds,newPointIdxs=target.add_node(tempPoints)
+                if newPointIdxs.__class__.__name__=='list':
+                    startPointIdx=newPointIdxs[0]
+                    startNodeId=newNodeIds[0]
+                else:
+                    startPointIdx=newPointIdxs
+                    startNodeId=newNodeIds
+                    
+                if NLines>0:
+                    for icell in range(NLines):      
+                        tempCell=vtk.vtkIdList()     
+                        tempLines.GetNextCell(tempCell)
+                        for iid in range(tempCell.GetNumberOfIds()):
+                            tempCell.SetId(iid,tempCell.GetId(iid)+startPointIdx)
+                        
+                        if icell==NLines-1:
+                            target.add_branch(tempCell,'vtkIdList',1)  #update of links
+                        else:
+                            target.add_branch(tempCell,'vtkIdList',0) #no updating of links
+                        
+                for inode,nodeId in enumerate(nodeIds):
+                    target.comments.set(startNodeId+inode,source.comments.get(nodeId))    
+                    if child==SelObj[0] and nodeId==SelObj[2]:
+                        newSelObj[2]=startNodeId+inode
+                source.delete_node(nodeIds)    
+            
+            if child=="synapse":
+                tags2delete=[]
+                for icell in range(NLines):      
+                    tempCell=vtk.vtkIdList()     
+                    tempLines.GetNextCell(tempCell)
+                    if tempCell.GetNumberOfIds()<3:
+                        continue;
+                    NodeIdx0=tempCell.GetId(0)
+                    NodeIdx1=tempCell.GetId(1)
+                    NodeIdx2=tempCell.GetId(2)
+                    Point0=tempPoints.GetPoint(NodeIdx0)
+                    Point1=tempPoints.GetPoint(NodeIdx1)
+                    Point2=tempPoints.GetPoint(NodeIdx2)
+                    NodeID0=NodeID.GetValue(NodeIdx0)
+                    NodeID1=NodeID.GetValue(NodeIdx1)
+                    NodeID2=NodeID.GetValue(NodeIdx2)
+                    tags2delete.append(source.nodeId2tagIdx(NodeID0))
+                    
+                    nodeId,tagIdx =target.add_tag(Point0,Point1,Point2)
+                    nodeIds=target.tagIdx2nodeId(tagIdx)
+                    
+                    target.comments.set(nodeIds[0],source.comments.get(NodeID0))    
+                    target.comments.set(nodeIds[1],source.comments.get(NodeID1))    
+                    target.comments.set(nodeIds[2],source.comments.get(NodeID2))  
+                    
+                    if child==SelObj[0]:
+                        if NodeID0==SelObj[2]:
+                            newSelObj[2]=nodeIds[0]
+                        if NodeID1==SelObj[2]:
+                            newSelObj[2]=nodeIds[1]
+                        if NodeID2==SelObj[2]:
+                            newSelObj[2]=nodeIds[2]
+                            
+                source.delete_tag(tags2delete)    
+
+            if child=="soma":
+                target.set_nodes(tempPoints,nodeIds)
+                for inode,nodeId in enumerate(nodeIds):
+                    target.comments.set(nodeId,source.comments.get(nodeId))    
+                    if child==SelObj[0] and nodeId==SelObj[2]:
+                        newSelObj[2]=nodeId
+                source.delete_node(nodeIds)    
+
         
-        for inode,nodeId in enumerate(nodeIds):
-            target.comments.set(startNodeId+inode,source.comments.get(nodeId))    
-            if nodeId==SelObj[2]:
-                newSeedId=startNodeId+inode
-        source.delete_node(nodeIds)     
-        
-        self.QRWin.SetActiveObj("skeleton",NeuronID,newSeedId)
+        newSelObj[1]=newNeuronID
+        self.QRWin.SetActiveObj(newSelObj[0],newSelObj[1],newSelObj[2])
         self.QRWin.GotoActiveObj()
+        self.DelNeuron(SourceNeuronID)
         
     def NewNeuron(self,NeuronID=None,objtype='neuron'):
         if NeuronID==None:
@@ -10572,16 +10681,16 @@ class ARIADNE(QtGui.QMainWindow):
                         nodelist=child.extract_nodeId_seeded_region(SelObj[2]) 
                         if not nodelist:
                             return
-                        VisibleNodes=child.data.GetPointData().GetArray("VisibleNodes")
+                        NodeState=child.data.GetPointData().GetArray("NodeState")
                         NodeID=child.data.GetPointData().GetArray("NodeID")
                         NNodes=child.data.GetNumberOfPoints()
                         for inode in range(NNodes):
                             nodeId=NodeID.GetValue(inode)
                             if nodelist.LookupValue(nodeId)>-1:
-                                VisibleNodes.SetValue(inode,1)
+                                NodeState.SetValue(inode,2)
                             else:
-                                VisibleNodes.SetValue(inode,0)
-                        VisibleNodes.Modified()
+                                NodeState.SetValue(inode,1)
+                        NodeState.Modified()
                         child.visible=2 #partially visible
                     else: 
                         child.set_visibility(1)
@@ -11285,10 +11394,11 @@ class ARIADNE(QtGui.QMainWindow):
 #        InterPolFactor=CubeLoader.InterPolFactor;
 #        if ROISize>361:
         ROISize=361
-        InterPolFactor=(CubeLoader._NCubesPerEdge[0]-1)*float(CubeLoader._CubeSize[0])/np.sqrt(2.0)/361;
+        
+        InterPolFactor=(CubeLoader._NCubesPerEdge[0]-1)*float(CubeLoader._CubeSize[0])/np.sqrt(2.0)/ROISize;
         CubeLoader.InterPolFactor=min(2.0,max(1.0,InterPolFactor));
         if InterPolFactor>2.0:
-            ROISize=2.0*np.floor(361*InterPolFactor/4.0)+1.0
+            ROISize=2.0*np.floor(ROISize*InterPolFactor/4.0)+1.0
 
 #        ROISize=540
         print "ROISize: ", ROISize
@@ -11686,28 +11796,30 @@ class ARIADNE(QtGui.QMainWindow):
                         status=self.ChangeCubeDataset(dataset);
                         
                     if status<1:
-                        datasetpath=os.path.join(self._DefaultDataPath,dataset)
-                        configfile=os.path.join(datasetpath,"{0}.conf".format(dataset))    
+                        configfile=os.path.join(self._DefaultDataPath,"{0}.conf".format(dataset))    
                         if not os.path.isfile(configfile):
-                            filelist=glob.glob(os.path.join(datasetpath,'*.conf'))
-                            if filelist.__len__()==1:
-                                configfile=filelist[0]
-                            else:
-                                if os.path.isdir(self._DefaultDataPath):
-                                    startpath=self._DefaultDataPath
+                            datasetpath=os.path.join(self._DefaultDataPath,dataset)
+                            configfile=os.path.join(datasetpath,"{0}.conf".format(dataset))    
+                            if not os.path.isfile(configfile):
+                                filelist=glob.glob(os.path.join(datasetpath,'*.conf'))
+                                if filelist.__len__()==1:
+                                    configfile=filelist[0]
                                 else:
-                                    startpath=application_path                    
-                                datasetpath = QtGui.QFileDialog.getExistingDirectory(self,"Choose the PARENT directory of dataset: {0}".format(dataset) ,\
-                                    startpath)
-                                datasetpath=unicode(datasetpath)
-                                if not (not datasetpath):
-                                    if not datasetpath.endswith(dataset):
-                                        datasetpath=os.path.join(datasetpath,dataset)                    
-                                    configfile=os.path.join(datasetpath,"{0}.conf".format(dataset))    
-                                    if not os.path.isfile(configfile):
-                                        filelist=glob.glob(os.path.join(datasetpath,'*.conf'))
-                                        if filelist.__len__()==1:
-                                            configfile=filelist[0]
+                                    if os.path.isdir(self._DefaultDataPath):
+                                        startpath=self._DefaultDataPath
+                                    else:
+                                        startpath=application_path                    
+                                    datasetpath = QtGui.QFileDialog.getExistingDirectory(self,"Choose the PARENT directory of dataset: {0}".format(dataset) ,\
+                                        startpath)
+                                    datasetpath=unicode(datasetpath)
+                                    if not (not datasetpath):
+                                        if not datasetpath.endswith(dataset):
+                                            datasetpath=os.path.join(datasetpath,dataset)                    
+                                        configfile=os.path.join(datasetpath,"{0}.conf".format(dataset))    
+                                        if not os.path.isfile(configfile):
+                                            filelist=glob.glob(os.path.join(datasetpath,'*.conf'))
+                                            if filelist.__len__()==1:
+                                                configfile=filelist[0]
                                     
                         if os.path.isfile(configfile) and not (self.CurrentDataset[1]==configfile):
                             self.ChangeCubeDataset(configfile)
@@ -11747,6 +11859,9 @@ class ARIADNE(QtGui.QMainWindow):
             self.SetRegionVisibility()
             
             self.ResetWorkingModes()
+            
+            self.ObjectBrowser.model().sort(0)
+
             
             self.UpdateWindowTitle()
             if (not (not self.job)) and InitializeJob:
@@ -11822,7 +11937,7 @@ class ARIADNE(QtGui.QMainWindow):
 
         obj=self.Neurons[currTask._neuronId].children['synapse']
         NodeID=obj.data.GetPointData().GetArray('NodeID')
-        DeletedNode=obj.data.GetPointData().GetArray('DeletedNodes')
+        NodeState=obj.data.GetPointData().GetArray('NodeState')
         NSynapses=obj.data.GetNumberOfCells()
         tempSynapse=list()
         for isyn in range(NSynapses):
@@ -11831,7 +11946,7 @@ class ARIADNE(QtGui.QMainWindow):
             Points=list()
             for ipoint in range(PointIds.GetNumberOfIds()):
                 pointIdx=PointIds.GetId(ipoint)
-                if DeletedNode.GetValue(pointIdx):
+                if NodeState.GetValue(pointIdx)==0:
                     skip=True
                     break
                 if ipoint==0:
@@ -13062,8 +13177,7 @@ class ARIADNE(QtGui.QMainWindow):
             text_file.close()
                 
     def LoadSWCFile(self,origfilename,tempNeurons=OrderedDict()):
-        scale=[1.0,1.0,1.0]
-        scale=[114.0,114.0,280.0]
+        scale=np.array(CubeLoader._DataScale[0:3])
         ineuron=self.Neurons.__len__()
         color=self.get_autocolor(ineuron)
         obj_comment=unicode("")
@@ -14295,6 +14409,8 @@ class ARIADNE(QtGui.QMainWindow):
     
         filename=unicode(self.text_CapturePath.text())
         filename, fileext = os.path.splitext(filename)
+        if self.ckbx_AppendCoordsCaptureFile.isChecked():
+            filename += '_x{0}'.format(self.SpinBoxX.value()) + '_y{0}'.format(self.SpinBoxY.value()) + '_z{0}'.format(self.SpinBoxZ.value())                    
         if self.ckbx_incrementCaptureFile.isChecked():
             result = re.search(r'(.+)_(\d+)$', filename)
             if result==None:
@@ -14321,7 +14437,7 @@ class ARIADNE(QtGui.QMainWindow):
         vtkAVIWriter.SetFileName(filename)
         vtkAVIWriter.Write()
         self.QRWin.RenderWindow.Render()
-        self.text_CapturePath.setText(filename)
+#        self.text_CapturePath.setText(filename)
         
     def SkelNodes2Soma(self):
         SelObj=self.QRWin.SelObj
@@ -14369,9 +14485,6 @@ class ARIADNE(QtGui.QMainWindow):
             
         child.delete_node(nodeIds)
         self.SetSomaVisibility()
-
-        
-    
 
     def CreateGIF(self):
         filename=unicode(self.text_GIFPath.text())
@@ -14793,15 +14906,9 @@ class ARIADNE(QtGui.QMainWindow):
         count = whiteImage.GetNumberOfPoints();
         fillarray=numpy_to_vtk(255*np.ones([count,1],dtype=np.uint8), deep=1, array_type=vtk.VTK_UNSIGNED_CHAR);
         whiteImage.GetPointData().SetScalars(fillarray)
-        
-#        stripper = vtk.vtkStripper();
-#        stripper.SetInput(data);
-#        stripper.Update();
-     
+             
         pol2stenc = vtk.vtkPolyDataToImageStencil();
         pol2stenc.SetTolerance(max(spacing)*0.5);
-#        pol2stenc.SetTolerance(1.0e-9 );
-#        pol2stenc.SetInput(stripper.GetOutput());
         pol2stenc.SetInput(data);
         pol2stenc.SetOutputOrigin(dataorigin);
         pol2stenc.SetOutputSpacing(spacing);

@@ -205,7 +205,7 @@
          <enum>QTabWidget::Rounded</enum>
         </property>
         <property name="currentIndex">
-         <number>2</number>
+         <number>7</number>
         </property>
         <widget class="QWidget" name="GeneralTab">
          <attribute name="title">
@@ -2047,7 +2047,7 @@
           <property name="geometry">
            <rect>
             <x>230</x>
-            <y>130</y>
+            <y>150</y>
             <width>71</width>
             <height>22</height>
            </rect>
@@ -2105,7 +2105,7 @@
           <property name="geometry">
            <rect>
             <x>170</x>
-            <y>130</y>
+            <y>150</y>
             <width>51</width>
             <height>22</height>
            </rect>
@@ -2125,6 +2125,19 @@
           </property>
           <property name="text">
            <string>Skel VP only</string>
+          </property>
+         </widget>
+         <widget class="QCheckBox" name="ckbx_AppendCoordsCaptureFile">
+          <property name="geometry">
+           <rect>
+            <x>170</x>
+            <y>130</y>
+            <width>131</width>
+            <height>22</height>
+           </rect>
+          </property>
+          <property name="text">
+           <string>Append coords</string>
           </property>
          </widget>
         </widget>
