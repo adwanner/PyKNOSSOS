@@ -1,5 +1,5 @@
 # PyKNOSSOS
-PyKNOSSOS is a software tool for the visualization and annotation of 3D image data and was developed for high-throughput image annotation of 3D electron microscopy stacks of brain tissue. http://www.ariadne-service.com
+PyKNOSSOS is a software tool for the visualization and annotation of 3D image data and was developed for high-throughput image annotation of 3D electron microscopy stacks of brain tissue. https://ariadne.ai
 
 Ergonomic software is important to minimize the amount of human labor in circuit reconstruction. PyKNOSSOS is a  software package for manual skeleton tracing, synapse annotation and visualization.
 PyKNOSSOS was inspired by KNOSSOS (http://www.knossostool.org).
